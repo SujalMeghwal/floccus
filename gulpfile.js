@@ -67,6 +67,18 @@ const icons = function() {
   return gulp.src(paths.icons).pipe(gulp.dest('./dist/icons/'))
 }
 
+const locales = function() {
+  return gulp.src('./_locales/**', { base: './' }).pipe(gulp.dest('./dist/'))
+}
+
+const manifest = function(done) {
+  const src = fs.readFileSync('./manifest.chrome.json', 'utf8')
+  const fixed = src.replace(/dist\//g, '')
+  fs.mkdirSync('./dist', { recursive: true })
+  fs.writeFileSync('./dist/manifest.json', fixed)
+  done()
+}
+
 const devjs = function() {
   return new Promise((resolve) =>
     webpack(devConfig, (err, stats) => {
@@ -202,7 +214,7 @@ const mocha = gulp.parallel(mochajs, mochacss)
 
 const thirdparty = gulp.parallel(mocha)
 
-const assets = gulp.parallel(thirdparty, icons)
+const assets = gulp.parallel(thirdparty, icons, locales, manifest)
 
 const build = gulp.series(cleanJs, js, assets)
 
