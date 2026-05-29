@@ -118,7 +118,7 @@
       v-model="locked"
       :max-width="480"
       persistent>
-      <v-card rounded="lg">
+      <v-card tile>
         <v-card-title class="d-flex align-center pt-5 pb-2">
           <v-icon
             color="primary"

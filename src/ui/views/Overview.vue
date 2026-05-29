@@ -3,7 +3,7 @@
     class="overview-container pa-3"
     :style="{maxWidth: '420px'}">
 
-    <!-- Header -->
+    <!-- Header: icon + account count + sync all button -->
     <div class="d-flex align-center justify-space-between mb-3">
       <div class="d-flex align-center">
         <v-icon
@@ -12,27 +12,21 @@
           class="mr-2">
           mdi-bookmark-multiple
         </v-icon>
-        <div>
-          <div class="overview-title font-weight-bold">floccus</div>
-          <div class="overview-subtitle">
-            {{ Object.keys(accountData).length }} sync {{ Object.keys(accountData).length === 1 ? 'account' : 'accounts' }}
-          </div>
-        </div>
+        <span class="overview-subtitle">
+          {{ Object.keys(accountData).length }} sync {{ Object.keys(accountData).length === 1 ? 'account' : 'accounts' }}
+        </span>
       </div>
-      <v-tooltip bottom>
-        <template #activator="{on, attrs}">
-          <v-btn
-            icon
-            small
-            color="primary"
-            v-bind="attrs"
-            v-on="on"
-            @click="clickSyncAll">
-            <v-icon small>mdi-sync-circle</v-icon>
-          </v-btn>
-        </template>
-        <span>{{ t('LabelSyncall') }}</span>
-      </v-tooltip>
+      <v-btn
+        color="primary"
+        elevation="0"
+        small
+        tile
+        @click="clickSyncAll">
+        <v-icon
+          small
+          left>mdi-sync</v-icon>
+        {{ t('LabelSyncall') }}
+      </v-btn>
     </div>
 
     <!-- Loading -->
@@ -83,38 +77,36 @@
         </div>
       </div>
 
-      <!-- Bottom actions -->
-      <div class="d-flex align-center mt-2">
-        <v-btn
-          block
-          color="primary"
-          elevation="0"
-          small
-          class="mr-2 flex-grow-1"
-          :to="{ name: routes.NEW_ACCOUNT }"
-          target="_blank">
-          <v-icon
-            left
-            x-small>mdi-plus</v-icon>
-          {{ t('LabelNewAccount') }}
-        </v-btn>
-        <v-tooltip top>
-          <template #activator="{on, attrs}">
-            <v-btn
-              icon
-              small
-              outlined
-              color="primary"
-              v-bind="attrs"
-              :to="{ name: routes.IMPORTEXPORT }"
-              target="_blank"
-              v-on="on">
-              <v-icon x-small>mdi-export-variant</v-icon>
-            </v-btn>
-          </template>
-          <span>{{ t('LabelImportExport') }}</span>
-        </v-tooltip>
-      </div>
+      <!-- Bottom action buttons -->
+      <v-btn
+        block
+        color="primary"
+        elevation="0"
+        small
+        tile
+        class="mt-2"
+        :to="{ name: routes.NEW_ACCOUNT }"
+        target="_blank">
+        <v-icon
+          left
+          small>mdi-plus</v-icon>
+        {{ t('LabelNewAccount') }}
+      </v-btn>
+      <v-btn
+        block
+        elevation="0"
+        small
+        tile
+        outlined
+        color="primary"
+        class="mt-1"
+        :to="{ name: routes.IMPORTEXPORT }"
+        target="_blank">
+        <v-icon
+          left
+          small>mdi-transfer</v-icon>
+        {{ t('LabelImportExport') }}
+      </v-btn>
     </template>
   </v-container>
 </template>
@@ -151,15 +143,10 @@ export default {
   padding-bottom: 8px;
 }
 
-.overview-title {
-  font-size: 1rem;
-  line-height: 1.15;
-  letter-spacing: -0.01em;
-}
-
 .overview-subtitle {
-  font-size: 11px;
-  opacity: 0.5;
-  line-height: 1;
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0.7;
+  letter-spacing: 0.01em;
 }
 </style>

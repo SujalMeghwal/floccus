@@ -2,7 +2,7 @@
   <v-card
     :loading="Boolean(account.data.syncing)"
     :class="['account-card', `account-card--${status}`]"
-    rounded="lg"
+    tile
     :elevation="status === 'disabled' ? 0 : 1">
     <template #progress>
       <v-progress-linear
@@ -28,7 +28,7 @@
           {{ account.data.type }}
         </v-chip>
         <v-icon
-          small
+          size="18"
           :color="status === 'disabled' ? 'blue-grey' : 'primary'"
           class="mr-1 flex-shrink-0">
           {{ account.data.localRoot === 'tabs' ? 'mdi-tab' : 'mdi-folder' }}
@@ -40,7 +40,7 @@
         class="account-card__status d-flex align-center flex-shrink-0"
         :style="{color: statusColor}">
         <v-icon
-          x-small
+          size="15"
           class="mr-1"
           :class="{'spinning': account.data.syncing}"
           :color="statusColor">
@@ -54,7 +54,7 @@
     <div class="account-card__meta px-3 pb-2 d-flex align-center justify-space-between flex-wrap">
       <span class="account-card__uri text-truncate">{{ uri }}</span>
       <span
-        :class="['account-card__detail', account.data.error ? 'error--text' : 'grey--text']">
+        :class="['account-card__detail', account.data.error ? 'error--text' : '']">
         {{ statusDetail }}
       </span>
     </div>
@@ -116,11 +116,12 @@
       <v-btn
         x-small
         text
+        tile
         color="primary"
         :to="{ name: routes.ACCOUNT_OPTIONS, params: { accountId: account.id } }"
         target="_blank">
         <v-icon
-          x-small
+          size="16"
           left>mdi-cog-outline</v-icon>
         {{ t('LabelOptions') }}
       </v-btn>
@@ -155,12 +156,14 @@
           <template #activator="{on, attrs}">
             <v-btn
               icon
-              x-small
+              small
               v-bind="attrs"
               :disabled="account.data.syncing || account.data.scheduled"
               v-on="on"
               @click="onTriggerSyncDown">
-              <v-icon x-small>mdi-arrow-down-bold</v-icon>
+              <v-icon
+                size="18"
+                color="#111">mdi-arrow-down-bold</v-icon>
             </v-btn>
           </template>
           <span>{{ t('LabelSyncDownOnce') }}</span>
@@ -170,12 +173,14 @@
           <template #activator="{on, attrs}">
             <v-btn
               icon
-              x-small
+              small
               v-bind="attrs"
               :disabled="account.data.syncing || account.data.scheduled"
               v-on="on"
               @click="onTriggerSyncUp">
-              <v-icon x-small>mdi-arrow-up-bold</v-icon>
+              <v-icon
+                size="18"
+                color="#111">mdi-arrow-up-bold</v-icon>
             </v-btn>
           </template>
           <span>{{ t('LabelSyncUpOnce') }}</span>
@@ -183,26 +188,28 @@
 
         <v-btn
           v-if="!account.data.syncing"
-          x-small
+          small
+          tile
           color="primary"
           elevation="0"
           class="ml-1"
           :disabled="account.data.scheduled"
           @click="onTriggerSync">
           <v-icon
-            x-small
+            small
             left>mdi-sync</v-icon>
           {{ t('LabelSyncnow') }}
         </v-btn>
         <v-btn
           v-else
-          x-small
+          small
+          tile
           outlined
           color="error"
           class="ml-1"
           @click="onCancelSync">
           <v-icon
-            x-small
+            small
             left>mdi-cancel</v-icon>
           {{ t('LabelCancelsync') }}
         </v-btn>
@@ -213,8 +220,17 @@
 
 <script>
 import PathHelper from '../../lib/PathHelper'
-import humanizeDuration from 'humanize-duration'
 import { actions } from '../store/definitions'
+
+function shortAge(ms) {
+  const s = Math.round(ms / 1000)
+  if (s < 60) return `${s}s ago`
+  const m = Math.round(s / 60)
+  if (m < 60) return `${m}m ago`
+  const h = Math.round(m / 60)
+  if (h < 24) return `${h}h ago`
+  return `${Math.round(h / 24)}d ago`
+}
 import { routes } from '../router'
 import BrowserTree from '../../lib/browser/BrowserTree'
 
@@ -298,21 +314,13 @@ export default {
       if (this.account.data.error) {
         return this.account.data.error
       }
-      if (this.account.data.syncing) return this.t('DescriptionSyncinprogress')
-      if (this.account.data.scheduled) return this.t('DescriptionSyncscheduled')
-      if (this.status === 'disabled') return 'Sync off — click Enable to activate'
+      if (this.account.data.syncing) return 'Syncing...'
+      if (this.account.data.scheduled) return 'Scheduled'
+      if (this.status === 'disabled') return 'Sync off — click Enable'
       if (this.account.data.lastSync) {
-        return this.t(
-          'StatusLastsynced',
-          [humanizeDuration(Date.now() - this.account.data.lastSync, {
-            largest: 1,
-            round: true,
-            language: navigator.language.split('-')[0],
-            fallbacks: navigator.languages.map(lang => lang.split('-')[0]).concat(['en'])
-          })]
-        )
+        return `Synced ${shortAge(Date.now() - this.account.data.lastSync)}`
       }
-      return this.t('StatusNeversynced')
+      return 'Never synced'
     },
     legacyWarning() {
       if (this.account.data.type === 'nextcloud' || this.account.data.type === 'nextcloud-legacy') {
@@ -367,6 +375,7 @@ export default {
 .account-card {
   transition: box-shadow 0.18s ease;
   overflow: hidden;
+  border-radius: 0 !important;
 }
 
 .account-card--disabled {
@@ -394,35 +403,41 @@ export default {
 }
 
 .account-card__type-chip {
-  font-size: 10px !important;
-  height: 18px !important;
+  font-size: 11px !important;
+  height: 20px !important;
   letter-spacing: 0.03em;
+  border-radius: 2px !important;
 }
 
 .account-card__folder {
-  font-size: 0.95rem !important;
+  font-size: 1.05rem !important;
+  font-weight: 700 !important;
   line-height: 1.2;
 }
 
 .account-card__status-text {
-  font-size: 11px !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
   letter-spacing: 0.02em;
 }
 
 .account-card__uri {
-  font-size: 11px !important;
-  opacity: 0.5;
-  max-width: 55%;
+  font-size: 13px !important;
+  font-weight: 600;
+  color: #111 !important;
+  max-width: 45%;
 }
 
 .account-card__detail {
-  font-size: 11px !important;
-  max-width: 55%;
+  font-size: 13px !important;
+  font-weight: 500;
+  color: #111 !important;
+  max-width: 58%;
   text-align: right;
 }
 
 .account-card__warn {
-  font-size: 11px !important;
+  font-size: 12px !important;
   line-height: 1.4;
 }
 
