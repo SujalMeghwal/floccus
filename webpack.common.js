@@ -7,7 +7,7 @@ const MiniCssExtractPlugin = require('mini-css-extract-plugin')
 const common = {
   output: {
     path: path.resolve(__dirname, 'dist', 'js'),
-    publicPath: '/dist/js/',
+    publicPath: '/js/',
     filename: `[name].js`,
   },
   module: {
@@ -92,6 +92,9 @@ const common = {
       /@sentry\/browser\/.*?lazyLoadIntegration/,
       path.resolve(__dirname, 'src/build-fixtures/lazyLoadIntegration.js')
     ),
+    new webpack.IgnorePlugin({
+      resourceRegExp: /\.pem$/,
+    }),
     new webpack.DefinePlugin({
       BROWSERSLIST_REGEX: require('./supportedBrowsers')
     })

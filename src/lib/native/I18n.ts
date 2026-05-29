@@ -35,22 +35,22 @@ export default class I18n {
 
   async load():Promise<void> {
     for (const locale of this.locales) {
-      try {
-        const fileName = './' + locale.replace('-', '_') + '/messages.json'
-        const imported = await context(fileName)
-        console.log(imported)
-        this.messages = imported
-        this.locale = locale
-        break
-      } catch (error) {
-        console.warn(error)
-      }
+      // Try short form first (e.g. 'en'), then full form (e.g. 'en_US')
+      // This avoids noisy module-not-found errors for the common en-US → en case
       try {
         const fileName = './' + locale.split('-')[0] + '/messages.json'
         const imported = await context(fileName)
-        console.log(imported)
         this.messages = imported
         this.locale = locale.split('-')[0]
+        break
+      } catch {
+        // short form not found, try full form
+      }
+      try {
+        const fileName = './' + locale.replace('-', '_') + '/messages.json'
+        const imported = await context(fileName)
+        this.messages = imported
+        this.locale = locale
         break
       } catch (error) {
         console.warn(error)

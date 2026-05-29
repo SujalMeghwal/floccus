@@ -11,12 +11,14 @@
         @input="$emit('update:label', $event)" />
     </div>
     <v-card class="mb-4">
-      <v-card-text
+      <v-card-title
         id="server"
-        class="text-h5">
-        <v-icon>mdi-account-box</v-icon>
+        class="options-section-title text-h5 font-weight-bold">
+        <v-icon
+          color="primary"
+          class="mr-2">mdi-account-box</v-icon>
         {{ t('LabelOptionsServerDetails') }}
-      </v-card-text>
+      </v-card-title>
       <v-card-text>
         <v-text-field
           :value="url"
@@ -28,7 +30,10 @@
           :label="t('LabelUsername')"
           @input="$emit('update:username', $event)" />
         <v-text-field
-          :label="t('LabelPassword')"
+          :value="password"
+          label="Password / Token"
+          hint="Enter your password, personal access token (PAT), or OAuth token"
+          :persistent-hint="true"
           :append-icon="showPassword ? 'mdi-eye' : 'mdi-eye-off'"
           :type="showPassword ? 'text' : 'password'"
           @click:append="showPassword = !showPassword"
@@ -57,8 +62,10 @@
       class="mb-4">
       <v-card-title
         id="folder"
-        class="text-h5">
-        <v-icon>mdi-folder-outline</v-icon>
+        class="options-section-title text-h5 font-weight-bold">
+        <v-icon
+          color="primary"
+          class="mr-2">mdi-folder-outline</v-icon>
         {{ t('LabelOptionsFolderMapping') }}
       </v-card-title>
       <v-card-text>
@@ -73,8 +80,10 @@
       class="mb-4">
       <v-card-title
         id="mobile"
-        class="text-h5">
-        <v-icon>mdi-cellphone-settings</v-icon>
+        class="options-section-title text-h5 font-weight-bold">
+        <v-icon
+          color="primary"
+          class="mr-2">mdi-cellphone-settings</v-icon>
         {{ t('LabelMobilesettings') }}
       </v-card-title>
       <v-card-text>
@@ -88,8 +97,10 @@
     <v-card class="mb-4">
       <v-card-title
         id="sync"
-        class="text-h5">
-        <v-icon>mdi-sync-circle</v-icon>
+        class="options-section-title text-h5 font-weight-bold">
+        <v-icon
+          color="primary"
+          class="mr-2">mdi-sync-circle</v-icon>
         {{ t('LabelOptionsSyncBehavior') }}
       </v-card-title>
       <v-card-text>
@@ -116,8 +127,10 @@
     <v-card class="mb-4">
       <v-card-title
         id="danger"
-        class="text-h5">
-        <v-icon>mdi-alert-circle</v-icon>
+        class="options-section-title text-h5 font-weight-bold">
+        <v-icon
+          color="error"
+          class="mr-2">mdi-alert-circle</v-icon>
         {{ t('LabelOptionsDangerous') }}
       </v-card-title>
       <v-card-text>
@@ -185,4 +198,9 @@ export default {
 </script>
 
 <style scoped>
+.options-section-title {
+  border-bottom: 1px solid rgba(0,0,0,0.08);
+  padding-bottom: 12px !important;
+  margin-bottom: 4px;
+}
 </style>

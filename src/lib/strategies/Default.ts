@@ -1685,7 +1685,8 @@ export default class SyncProcess {
         strategy = new UnidirectionalSyncProcess(mappings, localTree, server, progressCb)
         break
       default:
-        throw new Error('Unknown strategy: ' + json.strategy)
+        Logger.log('Unknown strategy: ' + json.strategy + '. Falling back to default.')
+        strategy = new SyncProcess(mappings, localTree, server, progressCb)
     }
     await strategy.setProgress(json)
     return strategy

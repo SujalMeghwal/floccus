@@ -1,165 +1,213 @@
 <template>
   <v-card
     :loading="Boolean(account.data.syncing)"
-    color="light-blue-lighten-5">
+    :class="['account-card', `account-card--${status}`]"
+    rounded="lg"
+    :elevation="status === 'disabled' ? 0 : 1">
     <template #progress>
       <v-progress-linear
-        v-if="account.data.syncing"
-        :value="account.data.syncing * 100 || 0" />
+        :value="account.data.syncing * 100 || 0"
+        color="primary"
+        height="2" />
     </template>
-    <v-container class="pa-4">
-      <v-row
-        no-gutters
-        class="flex-column">
-        <v-col>
-          <v-row no-gutters>
-            <v-col class="flex-grow-1">
-              <div class="overline">
-                {{ account.data.type }}
-              </div>
-              <div class="text-h6">
-                <v-icon
-                  v-if="account.data.localRoot === 'tabs'"
-                  color="primary">
-                  mdi-tab
-                </v-icon>
-                <v-icon
-                  v-else
-                  color="primary">
-                  mdi-folder
-                </v-icon> {{ folderName }}
-              </div>
-              <div class="caption">
-                {{ uri }}
-              </div>
-            </v-col>
-            <v-col
-              class="align-end flex-grow-0"
-              :style="{minWidth: 'max-content'}">
-              <div class="pa-3 d-inline-block font-weight-light body-2">
-                <v-icon
-                  :color="statusColor"
-                  :class="{spinning: account.data.syncing}">
-                  {{ statusIcon }}
-                </v-icon>
-                <span :style="{color: statusColor}">{{ statusLabel }}</span>
-              </div>
-            </v-col>
-          </v-row>
-        </v-col>
-        <v-col class="mt-3">
-          <v-alert
-            dense
-            dark
-            outlined
-            :icon="false"
-            :type="statusType"
-            class="pa-2 text-caption">
-            {{ statusDetail }} <template v-if="account.data.error">
-              <v-btn
-                :color="statusType"
-                class="float-right ml-1 mt-1"
-                x-small
-                target="_blank"
-                href="https://github.com/floccusaddon/floccus/issues">
-                {{ t('LabelReportproblem') }}
-              </v-btn>
-              <v-btn
-                :color="statusType"
-                class="float-right ml-1 mt-1"
-                x-small
-                target="_blank"
-                href="https://floccus.org/faq/">
-                {{ t('LabelFaq') }}
-              </v-btn>
-              <v-btn
-                :color="statusType"
-                class="float-right ml-1 mt-1"
-                x-small
-                @click="onGetLogs">
-                {{ t('LabelDebuglogs') }}
-              </v-btn>
-            </template>
-            <template v-if="status === 'scheduled'">
-              <v-btn
-                :color="statusType"
-                class="float-right"
-                x-small
-                @click="onForceSync">
-                {{ t('LabelScheduledforcesync') }}
-              </v-btn>
-            </template>
-          </v-alert>
-          <v-alert
-            v-if="legacyWarning"
-            dense
-            outlined
-            :type="'warning'">
-            {{ legacyWarning }}
-          </v-alert>
-          <v-alert
-            v-if="!account.data.failsafe"
-            dense
-            outlined
-            :type="'warning'">
-            {{ t('StatusFailsafeoff') }}
-          </v-alert>
-        </v-col>
-        <v-col>
-          <v-row
-            no-gutters
-            class="mt-2">
-            <v-col class="d-flex flex-row">
-              <v-btn
-                small
-                class="ma-1"
-                :to="{ name: routes.ACCOUNT_OPTIONS, params: { accountId: account.id } }"
-                target="_blank">
-                <v-icon>mdi-cog</v-icon>
-                {{ t('LabelOptions') }}
-              </v-btn>
-            </v-col>
-            <v-col class="d-flex flex-row justify-end">
-              <v-btn
-                class="ma-1 ml-0"
-                small
-                :disabled="account.data.syncing || account.data.scheduled"
-                :title="t('LabelSyncDownOnce')"
-                @click="onTriggerSyncDown">
-                <v-icon>mdi-arrow-down-bold</v-icon>
-              </v-btn>
-              <v-btn
-                class="ma-1"
-                small
-                :disabled="account.data.syncing || account.data.scheduled"
-                :title="t('LabelSyncUpOnce')"
-                @click="onTriggerSyncUp">
-                <v-icon>mdi-arrow-up-bold</v-icon>
-              </v-btn>
-              <v-btn
-                v-if="!account.data.syncing"
-                :disabled="account.data.scheduled"
-                class="primary ma-1"
-                small
-                :title="t('LabelSyncnow')"
-                :aria-label="t('LabelSyncnow')"
-                @click="onTriggerSync">
-                <v-icon>mdi-sync</v-icon>
-              </v-btn>
-              <v-btn
-                v-else
-                class="ma-1 mr-0"
-                small
-                :title="t('LabelCancelsync')"
-                :aria-label="t('LabelCancelsync')"
-                @click="onCancelSync">
-                <v-icon>mdi-cancel</v-icon>
-              </v-btn>
-            </v-col>
-          </v-row>
-        </v-col>
-      </v-row>
-    </v-container>
+
+    <!-- Row 1: type + folder + status -->
+    <div class="account-card__top px-3 pt-3 pb-1 d-flex align-center justify-space-between">
+      <div class="d-flex align-center min-w-0 mr-2">
+        <v-chip
+          x-small
+          label
+          :color="status === 'disabled' ? 'blue-grey' : 'primary'"
+          class="account-card__type-chip mr-2 white--text font-weight-bold flex-shrink-0"
+          :outlined="status === 'disabled'">
+          <v-icon
+            x-small
+            left>
+            {{ typeIcon }}
+          </v-icon>
+          {{ account.data.type }}
+        </v-chip>
+        <v-icon
+          small
+          :color="status === 'disabled' ? 'blue-grey' : 'primary'"
+          class="mr-1 flex-shrink-0">
+          {{ account.data.localRoot === 'tabs' ? 'mdi-tab' : 'mdi-folder' }}
+        </v-icon>
+        <span class="account-card__folder font-weight-semibold text-truncate">{{ folderName }}</span>
+      </div>
+
+      <div
+        class="account-card__status d-flex align-center flex-shrink-0"
+        :style="{color: statusColor}">
+        <v-icon
+          x-small
+          class="mr-1"
+          :class="{'spinning': account.data.syncing}"
+          :color="statusColor">
+          {{ statusIcon }}
+        </v-icon>
+        <span class="account-card__status-text font-weight-medium">{{ statusLabel }}</span>
+      </div>
+    </div>
+
+    <!-- Row 2: uri + last sync detail -->
+    <div class="account-card__meta px-3 pb-2 d-flex align-center justify-space-between flex-wrap">
+      <span class="account-card__uri text-truncate">{{ uri }}</span>
+      <span
+        :class="['account-card__detail', account.data.error ? 'error--text' : 'grey--text']">
+        {{ statusDetail }}
+      </span>
+    </div>
+
+    <!-- Error action buttons -->
+    <div
+      v-if="account.data.error"
+      class="px-3 pb-2 d-flex flex-wrap gap-1">
+      <v-btn
+        color="error"
+        x-small
+        outlined
+        @click="onGetLogs">
+        {{ t('LabelDebuglogs') }}
+      </v-btn>
+      <v-btn
+        color="error"
+        x-small
+        outlined
+        href="https://floccus.org/faq/"
+        target="_blank">
+        {{ t('LabelFaq') }}
+      </v-btn>
+      <v-btn
+        color="error"
+        x-small
+        outlined
+        href="https://github.com/floccusaddon/floccus/issues"
+        target="_blank">
+        {{ t('LabelReportproblem') }}
+      </v-btn>
+    </div>
+
+    <!-- Inline warnings (legacy / failsafe) -->
+    <div
+      v-if="legacyWarning || !account.data.failsafe"
+      class="px-3 pb-1">
+      <div
+        v-if="legacyWarning"
+        class="account-card__warn warning--text text-caption">
+        <v-icon
+          x-small
+          color="warning"
+          class="mr-1">mdi-alert-outline</v-icon>{{ legacyWarning }}
+      </div>
+      <div
+        v-if="!account.data.failsafe"
+        class="account-card__warn warning--text text-caption">
+        <v-icon
+          x-small
+          color="warning"
+          class="mr-1">mdi-alert-outline</v-icon>{{ t('StatusFailsafeoff') }}
+      </div>
+    </div>
+
+    <!-- Action row -->
+    <v-divider />
+    <div class="account-card__actions px-2 py-1 d-flex align-center justify-space-between">
+      <v-btn
+        x-small
+        text
+        color="primary"
+        :to="{ name: routes.ACCOUNT_OPTIONS, params: { accountId: account.id } }"
+        target="_blank">
+        <v-icon
+          x-small
+          left>mdi-cog-outline</v-icon>
+        {{ t('LabelOptions') }}
+      </v-btn>
+
+      <div class="d-flex align-center">
+        <!-- Scheduled force-sync -->
+        <v-btn
+          v-if="status === 'scheduled'"
+          x-small
+          text
+          color="info"
+          class="mr-1"
+          @click="onForceSync">
+          {{ t('LabelScheduledforcesync') }}
+        </v-btn>
+
+        <!-- Enable sync (disabled state) -->
+        <v-btn
+          v-if="status === 'disabled'"
+          x-small
+          color="primary"
+          elevation="0"
+          class="mr-1"
+          @click="onEnableSync">
+          <v-icon
+            x-small
+            left>mdi-sync</v-icon>
+          Enable
+        </v-btn>
+
+        <v-tooltip top>
+          <template #activator="{on, attrs}">
+            <v-btn
+              icon
+              x-small
+              v-bind="attrs"
+              :disabled="account.data.syncing || account.data.scheduled"
+              v-on="on"
+              @click="onTriggerSyncDown">
+              <v-icon x-small>mdi-arrow-down-bold</v-icon>
+            </v-btn>
+          </template>
+          <span>{{ t('LabelSyncDownOnce') }}</span>
+        </v-tooltip>
+
+        <v-tooltip top>
+          <template #activator="{on, attrs}">
+            <v-btn
+              icon
+              x-small
+              v-bind="attrs"
+              :disabled="account.data.syncing || account.data.scheduled"
+              v-on="on"
+              @click="onTriggerSyncUp">
+              <v-icon x-small>mdi-arrow-up-bold</v-icon>
+            </v-btn>
+          </template>
+          <span>{{ t('LabelSyncUpOnce') }}</span>
+        </v-tooltip>
+
+        <v-btn
+          v-if="!account.data.syncing"
+          x-small
+          color="primary"
+          elevation="0"
+          class="ml-1"
+          :disabled="account.data.scheduled"
+          @click="onTriggerSync">
+          <v-icon
+            x-small
+            left>mdi-sync</v-icon>
+          {{ t('LabelSyncnow') }}
+        </v-btn>
+        <v-btn
+          v-else
+          x-small
+          outlined
+          color="error"
+          class="ml-1"
+          @click="onCancelSync">
+          <v-icon
+            x-small
+            left>mdi-cancel</v-icon>
+          {{ t('LabelCancelsync') }}
+        </v-btn>
+      </div>
+    </div>
   </v-card>
 </template>
 
@@ -182,16 +230,16 @@ export default {
     return {
       rootPath: '',
       statusColors: {
-        disabled: 'rgb(125, 114, 128)',
-        ok: '#3d8e39',
-        error: '#8e3939',
-        syncing: '#2196F3',
-        scheduled: '#2196F3',
+        disabled: '#90a4ae',
+        ok: '#2d9e5f',
+        error: '#d62828',
+        syncing: '#4361ee',
+        scheduled: '#4895ef',
       },
       statusIcons: {
         disabled: 'mdi-sync-off',
-        ok: 'mdi-check',
-        error: 'mdi-sync-alert',
+        ok: 'mdi-check-circle-outline',
+        error: 'mdi-alert-circle-outline',
         syncing: 'mdi-sync',
         scheduled: 'mdi-timer-sync-outline'
       },
@@ -202,22 +250,16 @@ export default {
         syncing: this.t('StatusSyncing'),
         scheduled: this.t('StatusScheduled')
       },
-      strategyIcons: {
-        slave: 'mdi-arrow-down-bold',
-        overwrite: 'mdi-arrow-up-bold',
-        default: 'mdi-merge',
+      typeIcons: {
+        'git': 'mdi-git',
+        'webdav': 'mdi-cloud',
+        'nextcloud-bookmarks': 'mdi-cloud',
+        'nextcloud-folders': 'mdi-cloud',
+        'google-drive': 'mdi-google-drive',
+        'dropbox': 'mdi-dropbox',
+        'linkwarden': 'mdi-link',
+        'karakeep': 'mdi-bookmark',
       },
-      strategyLabels: {
-        slave: this.t('LabelSyncDown'),
-        overwrite: this.t('LabelSyncUp'),
-        default: this.t('LabelSyncNormal'),
-      },
-      strategyDescriptions: {
-        slave: this.t('DescriptionSyncDown'),
-        overwrite: this.t('DescriptionSyncUp'),
-        default: this.t('DescriptionSyncNormal'),
-      },
-      showDetails: false
     }
   },
   computed: {
@@ -233,19 +275,14 @@ export default {
     uri() {
       return this.account.label
     },
+    typeIcon() {
+      return this.typeIcons[this.account.data.type] || 'mdi-sync'
+    },
     status() {
-      if (this.account.data.syncing) {
-        return 'syncing'
-      }
-      if (this.account.data.scheduled) {
-        return 'scheduled'
-      }
-      if (this.account.data.error) {
-        return 'error'
-      }
-      if (!this.account.data.enabled && !this.account.data.syncIntervalEnabled) {
-        return 'disabled'
-      }
+      if (this.account.data.syncing) return 'syncing'
+      if (this.account.data.scheduled) return 'scheduled'
+      if (this.account.data.error) return 'error'
+      if (!this.account.data.enabled && !this.account.data.syncIntervalEnabled) return 'disabled'
       return 'ok'
     },
     statusIcon() {
@@ -257,30 +294,13 @@ export default {
     statusLabel() {
       return this.statusLabels[this.status]
     },
-    statusType() {
-      if (this.account.data.error) {
-        return 'error'
-      }
-      return 'info'
-    },
     statusDetail() {
       if (this.account.data.error) {
-        return this.account.data.error + ' | ' + this.t(
-          'StatusLastsynced',
-          [humanizeDuration(Date.now() - this.account.data.lastSync, {
-            largest: 1,
-            round: true,
-            language: navigator.language.split('-')[0],
-            fallbacks: navigator.languages.map(lang => lang.split('-')[0]).concat(['en'])
-          })]
-        )
+        return this.account.data.error
       }
-      if (this.account.data.syncing) {
-        return this.t('DescriptionSyncinprogress')
-      }
-      if (this.account.data.scheduled) {
-        return this.t('DescriptionSyncscheduled')
-      }
+      if (this.account.data.syncing) return this.t('DescriptionSyncinprogress')
+      if (this.account.data.scheduled) return this.t('DescriptionSyncscheduled')
+      if (this.status === 'disabled') return 'Sync off — click Enable to activate'
       if (this.account.data.lastSync) {
         return this.t(
           'StatusLastsynced',
@@ -295,8 +315,7 @@ export default {
       return this.t('StatusNeversynced')
     },
     legacyWarning() {
-      if (this.account.data.type === 'nextcloud' ||
-          this.account.data.type === 'nextcloud-legacy') {
+      if (this.account.data.type === 'nextcloud' || this.account.data.type === 'nextcloud-legacy') {
         return this.t('LegacyAdapterDeprecation')
       }
       return null
@@ -314,9 +333,6 @@ export default {
     this.rootPath = await BrowserTree.getPathFromLocalId(this.localRoot)
   },
   methods: {
-    onChangeStrategy() {
-      this.$store.dispatch(actions.STORE_ACCOUNT, {id: this.account.id, data: this.account.data})
-    },
     onTriggerSync() {
       this.$store.dispatch(actions.TRIGGER_SYNC, this.account.id)
     },
@@ -329,9 +345,6 @@ export default {
     onCancelSync() {
       this.$store.dispatch(actions.CANCEL_SYNC, this.account.id)
     },
-    onToggleEnabled() {
-      this.$store.dispatch(actions.STORE_ACCOUNT, {id: this.account.id, data: this.account.data})
-    },
     onGetLogs() {
       this.$store.dispatch(actions.DOWNLOAD_LOGS)
     },
@@ -339,22 +352,102 @@ export default {
       if (confirm(this.t('DescriptionScheduledforcesync'))) {
         this.$store.dispatch(actions.FORCE_SYNC, this.account.id)
       }
+    },
+    onEnableSync() {
+      this.$store.dispatch(actions.STORE_ACCOUNT, {
+        id: this.account.id,
+        data: {...this.account.data, enabled: true, syncIntervalEnabled: true}
+      })
     }
   }
 }
 </script>
 
 <style scoped>
+.account-card {
+  transition: box-shadow 0.18s ease;
+  overflow: hidden;
+}
+
+.account-card--disabled {
+  opacity: 0.75;
+}
+
+.account-card--error {
+  border-left: 3px solid #d62828 !important;
+}
+
+.account-card--ok {
+  border-left: 3px solid #2d9e5f !important;
+}
+
+.account-card--syncing {
+  border-left: 3px solid #4361ee !important;
+}
+
+.account-card--scheduled {
+  border-left: 3px solid #4895ef !important;
+}
+
+.account-card--disabled {
+  border-left: 3px solid #90a4ae !important;
+}
+
+.account-card__type-chip {
+  font-size: 10px !important;
+  height: 18px !important;
+  letter-spacing: 0.03em;
+}
+
+.account-card__folder {
+  font-size: 0.95rem !important;
+  line-height: 1.2;
+}
+
+.account-card__status-text {
+  font-size: 11px !important;
+  letter-spacing: 0.02em;
+}
+
+.account-card__uri {
+  font-size: 11px !important;
+  opacity: 0.5;
+  max-width: 55%;
+}
+
+.account-card__detail {
+  font-size: 11px !important;
+  max-width: 55%;
+  text-align: right;
+}
+
+.account-card__warn {
+  font-size: 11px !important;
+  line-height: 1.4;
+}
+
+.account-card__actions {
+  min-height: 36px;
+}
+
+.gap-1 > * + * {
+  margin-left: 4px;
+}
+
 .spinning {
-  animation: spin 2s infinite linear;
+  animation: spin 1.2s infinite linear;
 }
 
 @keyframes spin {
-  0% {
-    transform: rotate(360deg);
-  }
-  99.9% {
-    transform: rotate(0deg);
-  }
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.font-weight-semibold {
+  font-weight: 600 !important;
+}
+
+.min-w-0 {
+  min-width: 0;
 }
 </style>

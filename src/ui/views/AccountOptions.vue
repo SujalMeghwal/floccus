@@ -62,13 +62,13 @@
       :loading="loading">
       <v-container :class="[!$vuetify.breakpoint.mobile && 'pa-5']">
         <v-row>
-          <v-col :style="$vuetify.breakpoint.mobile? {display: 'none'} : {width: '250px', 'flex-grow': 0}">
+          <v-col :style="$vuetify.breakpoint.mobile? {display: 'none'} : {width: '260px', 'flex-grow': 0}">
             <div
               :style="{position: 'sticky', top: '20px'}">
-              <div class="overline">
+              <div class="overline font-weight-bold" style="font-size:13px;letter-spacing:0.1em">
                 {{ data.type }}
               </div>
-              <div class="headline">
+              <div class="text-h5 font-weight-bold" style="line-height:1.2;margin-bottom:8px">
                 {{ folderName || t('LabelUntitledfolder') }}
               </div>
               <v-list
@@ -118,16 +118,22 @@
             </div>
           </v-col>
           <v-col>
-            <div class="d-flex flex-row-reverse">
+            <div class="d-flex flex-row-reverse align-center">
               <v-btn
-                class="primary"
+                color="primary"
+                elevation="0"
+                large
                 @click="onSave">
+                <v-icon
+                  left
+                  small>mdi-content-save-outline</v-icon>
                 {{ t('LabelSave') }}
               </v-btn>
               <v-icon
                 v-if="saved"
-                color="green">
-                mdi-check
+                color="success"
+                class="mr-2">
+                mdi-check-circle-outline
               </v-icon>
             </div>
             <v-form
@@ -174,16 +180,22 @@
                 @reset="onReset"
                 @delete="onDelete" />
             </v-form>
-            <div class="d-flex flex-row-reverse">
+            <div class="d-flex flex-row-reverse align-center">
               <v-btn
-                class="primary"
+                color="primary"
+                elevation="0"
+                large
                 @click="onSave">
+                <v-icon
+                  left
+                  small>mdi-content-save-outline</v-icon>
                 {{ t('LabelSave') }}
               </v-btn>
               <v-icon
                 v-if="saved"
-                color="green">
-                mdi-check
+                color="success"
+                class="mr-2">
+                mdi-check-circle-outline
               </v-icon>
             </div>
           </v-col>
@@ -282,15 +294,45 @@ export default {
 </script>
 
 <style>
-    .width {
-        max-width: 850px;
-        margin: 0 auto;
-    }
-    .v-form .v-icon {
-      margin-right: 10px;
-    }
+.width {
+  max-width: 900px;
+  margin: 0 auto;
+}
 
-    .text-h6 {
-      margin-top: 20px;
-    }
+/* bigger body text throughout options */
+.width .v-card__text,
+.width .v-label,
+.width .v-input input,
+.width .v-select__selection,
+.width .caption {
+  font-size: 14px !important;
+}
+
+.width .text-h6 {
+  font-size: 1.1rem !important;
+  font-weight: 600 !important;
+  margin-top: 20px;
+}
+
+/* option sub-labels (caption class) */
+.width .caption {
+  font-size: 13px !important;
+  line-height: 1.5;
+}
+
+/* radio/checkbox labels */
+.width .v-radio .v-label,
+.width .v-input--checkbox .v-label,
+.width .v-input--switch .v-label {
+  font-size: 14px !important;
+}
+
+.width .v-form .v-icon {
+  margin-right: 10px;
+}
+
+/* nav sidebar items bigger */
+.width .v-list-item__title {
+  font-size: 14px !important;
+}
 </style>

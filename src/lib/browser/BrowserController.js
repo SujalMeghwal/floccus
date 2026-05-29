@@ -11,7 +11,7 @@ import { STATUS_ALLGOOD, STATUS_DISABLED, STATUS_ERROR, STATUS_SYNCING } from '.
 import { initSharp } from '../sentry'
 import { onWakeUp } from '../on-wake-up'
 
-const INACTIVITY_TIMEOUT = 7 * 1000 // 7 seconds
+const INACTIVITY_TIMEOUT = 1500 // 1.5 seconds
 const MAX_BACKOFF_INTERVAL = 1000 * 60 * 60 // 1 hour
 const DEFAULT_SYNC_INTERVAL = 15 // 15 minutes
 const STALE_SYNC_TIME = 1000 * 60 * 60 * 24 * 2 // two days
@@ -326,8 +326,8 @@ export default class BrowserController {
       accountsToSync.concat(containingAccounts),
       acc => acc.id
     )
-      // Filter out accounts that are not enabled
-      .filter(account => account.getData().enabled)
+      // Filter out accounts that have no sync mode enabled (fully disabled)
+      .filter(account => account.getData().enabled || account.getData().syncIntervalEnabled)
       // Filter out accounts that are syncing, because the event may stem from the sync run
       .filter(account => !account.getData().syncing)
 
@@ -354,8 +354,8 @@ export default class BrowserController {
     })
 
     const accountsToSync = tabAccounts
-      // Filter out accounts that are not enabled
-      .filter(account => account.getData().enabled)
+      // Filter out accounts that have no sync mode enabled (fully disabled)
+      .filter(account => account.getData().enabled || account.getData().syncIntervalEnabled)
       // Filter out accounts that are syncing, because the event may stem from the sync run
       .filter(account => !account.getData().syncing)
 
@@ -460,7 +460,7 @@ export default class BrowserController {
       if (status === STATUS_SYNCING || accData.syncing || account.syncing) {
         // Show syncing symbol if any account is syncing
         return STATUS_SYNCING
-      } else if (status === STATUS_ERROR || (accData.error && !accData.syncing) || (accData.enabled && accData.lastSync < Date.now() - STALE_SYNC_TIME)) {
+      } else if (status === STATUS_ERROR || (accData.error && !accData.syncing) || ((accData.enabled || accData.syncIntervalEnabled) && accData.lastSync < Date.now() - STALE_SYNC_TIME)) {
         // Show error symbol if any account has an error and not currently syncing, or if any account is enabled but hasn't been synced for two days
         return STATUS_ERROR
       } else {
@@ -505,9 +505,10 @@ export default class BrowserController {
     await Promise.all(
       accounts.map(async acc => {
         if (acc.getData().syncing) {
+          const data = acc.getData()
           await acc.setData({
             syncing: false,
-            scheduled: acc.getData().enabled,
+            scheduled: data.enabled || data.syncIntervalEnabled,
           })
         }
         if (acc.getData().localRoot === 'tabs') {
@@ -528,9 +529,10 @@ export default class BrowserController {
     await Promise.all(
       accounts.map(async acc => {
         if (acc.getData().syncing) {
+          const data = acc.getData()
           await acc.setData({
             syncing: false,
-            scheduled: acc.getData().enabled,
+            scheduled: data.enabled || data.syncIntervalEnabled,
           })
         }
       })
