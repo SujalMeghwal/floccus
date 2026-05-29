@@ -28,6 +28,48 @@ If you'd like to support the creation and maintenance of this software, please c
 | [<img src="https://img.shields.io/badge/Open%20Collective-sponsor-lightblue.svg?logo=opencollective&style=for-the-badge" alt="Open Collective">](https://opencollective.com/floccus) | [<img src="https://img.shields.io/badge/github-sponsor-violet.svg?logo=github&style=for-the-badge">](https://github.com/sponsors/marcelklehr) | [<img src="https://img.shields.io/badge/LiberaPay-sponsor-yellow.svg?logo=liberapay&style=for-the-badge">](https://liberapay.com/marcelklehr/donate)   | [<img src="https://img.shields.io/badge/paypal-donate-blue.svg?logo=paypal&style=for-the-badge">](https://www.paypal.me/marcelklehr1)  |
 |:----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------:| :-------------------------------------------------------------------------------------------------------------------------------------------------: |:--:|:---:|
 
+## 🔧 Fork Changes (SujalMeghwal)
+
+This fork contains the following improvements and bug fixes on top of upstream `develop`:
+
+### Bug Fixes
+
+| Area | Fix |
+|------|-----|
+| **Git adapter** | `git add '.'` → stage only the bookmark file, not the entire working tree |
+| **Git adapter** | IndexedDB cleanup now deletes only this account's DB, not all browser DBs |
+| **Git adapter** | Stable DB hash — removed `Date.now()` so DB name is consistent across failed/retried syncs |
+| **Git adapter** | `setLock` guarded against null `fs` — no crash after cleanup |
+| **Git adapter** | `clearAllLocks` logs errors instead of silently ignoring failed lock deletions |
+| **Git adapter** | Push/fetch/lock operations retry 3× with 1.5s backoff on network errors |
+| **Git adapter** | Git commit author uses your configured username instead of generic "Floccus bookmarks sync" |
+| **Git adapter** | Initial commit stages `README.md` explicitly, not `'.'` |
+| **Git adapter** | Removed unused `Parallel` import |
+| **Default strategy** | Unknown continuation strategy falls back gracefully instead of crashing mid-sync |
+| **Change-based sync** | `INACTIVITY_TIMEOUT` reduced 7 s → 1.5 s — bookmark changes sync in ~1.5 s |
+| **Change-based sync** | `onchange` / `onTabsChanged` now trigger for accounts with `syncIntervalEnabled` too (not just `enabled`) |
+| **Change-based sync** | `onStartup` / `onLoad` schedule accounts with either sync mode active |
+| **Status badge** | Stale-sync error badge now covers interval-only accounts |
+| **i18n** | Locale resolution tries short form (`en`) before full form (`en_US`) — eliminates noisy module-not-found errors |
+| **Build** | `webpack publicPath` fixed `/dist/js/` → `/js/` — MDI icon fonts now load correctly when extension is loaded from `dist/` |
+| **Build** | `webpack IgnorePlugin` for `.pem` files — eliminates node_modules test-fixture warnings |
+| **Build** | `gulpfile` copies `manifest.json` and `_locales/` into `dist/` — extension loads cleanly from `dist/` folder |
+
+### UI / UX Improvements
+
+| Area | Change |
+|------|--------|
+| **Popup — AccountCard** | Compact redesign: removed heavy `v-alert` box, inline status text, left color-coded border stripe per status (green/red/blue), ~40% less vertical height |
+| **Popup — AccountCard** | "Disabled" state shows explanation text + one-click **Enable Sync** button |
+| **Popup — AccountCard** | Password field in Git options: fixed missing `:value` binding (value was never shown); label → **Password / Token** with PAT hint |
+| **Popup — Overview** | Narrower container (420 px), tighter header, smaller spacing between cards |
+| **Popup — Footer** | Reduced to 32 px height |
+| **Options page** | All section headers larger and color-coded; global font size bumped to 14 px for readability |
+| **Options page** | Save button enlarged with save icon; sidebar heading uses `text-h5` |
+| **Theme** | Custom Vuetify theme: indigo-blue primary, proper dark-mode colors, diagonal gradient background |
+
+---
+
 ## 🎬 Getting started
 If you don't know how to start with Floccus, [read these guides](https://floccus.org/guides).
 
