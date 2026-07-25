@@ -10,6 +10,7 @@ import Html from '../serializers/Html'
 import {
   FileUnreadableError, GitPushError,
   MissingPermissionsError,
+  NetworkError,
   ResourceLockedError,
   SlashError
 } from '../../errors/Error'
@@ -20,16 +21,41 @@ declare const IS_BROWSER: boolean
 
 const LOCK_INTERVAL = 2 * 60 * 1000
 const LOCK_TIMEOUT = 15 * 60 * 1000
-const NETWORK_RETRIES = 3
+const NETWORK_RETRIES = 6
 const NETWORK_RETRY_DELAY = 1500
+
+// A "Failed to fetch"-style error means the network stack itself couldn't
+// reach the host (DNS not ready, VPN tunnel still coming up after a reboot,
+// interface down). These are worth retrying and waiting out. Auth failures,
+// 404s and git protocol errors are not — retrying them just wastes the budget.
+function isNetworkError(e: any): boolean {
+  if (!e) return false
+  if (e instanceof NetworkError) return true
+  // isomorphic-git rethrows the browser fetch TypeError, whose message is
+  // "Failed to fetch" (Chromium) / "NetworkError when attempting to fetch
+  // resource." (Firefox). It has no HTTP status because no response arrived.
+  const msg = String(e.message || '')
+  if (e.name === 'TypeError' && /fetch/i.test(msg)) return true
+  return /failed to fetch|networkerror when attempting/i.test(msg)
+}
 
 async function withRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
   for (let attempt = 1; attempt <= NETWORK_RETRIES; attempt++) {
     try {
       return await fn()
     } catch (e) {
-      if (attempt === NETWORK_RETRIES) throw e
-      Logger.log(`(git) ${label} failed (attempt ${attempt}/${NETWORK_RETRIES}): ${e.message}. Retrying...`)
+      // Don't burn retries on non-network failures (auth, 404, protocol) —
+      // rethrow them immediately.
+      if (!isNetworkError(e)) throw e
+      if (attempt === NETWORK_RETRIES) {
+        // Surface as a NetworkError (a TransientError) so the controller keeps
+        // auto-retrying on its schedule instead of treating this as a hard,
+        // manual-only error. Fixes "must click Sync now several times" after a
+        // reboot while the VPN tunnel is still establishing.
+        Logger.log(`(git) ${label} failed after ${NETWORK_RETRIES} network retries: ${e.message}`)
+        throw new NetworkError()
+      }
+      Logger.log(`(git) ${label} network failure (attempt ${attempt}/${NETWORK_RETRIES}): ${e.message}. Retrying...`)
       await new Promise(resolve => setTimeout(resolve, NETWORK_RETRY_DELAY * attempt))
     }
   }
