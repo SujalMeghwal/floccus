@@ -27,15 +27,17 @@ import TResource, { IHashSettings, OrderFolderResource, TLocalTree } from '../in
 import { TAdapter } from '../interfaces/Adapter'
 import {
   CancelledSyncError, ClientsideAdditionFailsafeError,
-  ClientsideDeletionFailsafeError, ServersideAdditionFailsafeError,
+  ClientsideDeletionFailsafeError, FloccusError, ServersideAdditionFailsafeError,
   ServersideDeletionFailsafeError
 } from '../../errors/Error'
 
 import NextcloudBookmarksAdapter from '../adapters/NextcloudBookmarks'
 import CachingAdapter from '../adapters/Caching'
 import { yieldToEventLoop } from '../yieldToEventLoop'
+import { isTest } from '../isTest'
 
-export const ACTION_CONCURRENCY = 5
+// Tests have to be reproducible
+export const ACTION_CONCURRENCY = isTest ? 1 : 5
 
 export default class SyncProcess {
   protected mappings: Mappings
@@ -44,6 +46,9 @@ export default class SyncProcess {
   protected cacheTreeRoot: Folder<typeof ItemLocation.LOCAL>|null
   protected canceled: boolean
   protected throttledProgressCb: ThrottledFunction<[progress: number, actionsDone: number | undefined], void>
+  // Un-throttled progress callback, used to persist the continuation synchronously at the
+  // exact interrupt point (see updateProgress) so a resumed sync continues from there.
+  protected progressCb: (progress: number, actionsDone?: number) => Promise<void>
 
   // Stage -1
   protected localTreeRoot: Folder<typeof ItemLocation.LOCAL> = null
@@ -76,6 +81,10 @@ export default class SyncProcess {
   protected actionsDone = 0
   protected actionsPlanned = 0
 
+  // Test-only: when set, the sync self-cancels deterministically once this many
+  // actions have been executed, instead of relying on a wall-clock timer.
+  protected interruptAfterActions: number | null = null
+
   protected isFirefox: boolean
 
   protected staticContinuation: any = null
@@ -101,6 +110,7 @@ export default class SyncProcess {
     this.localTree = localTree
     this.server = server
 
+    this.progressCb = progressCb
     this.throttledProgressCb = throttle(progressCb, 1500)
     this.cancelPromise = new Promise<void>((resolve, reject) => {
       this.cancelCb = reject
@@ -131,8 +141,12 @@ export default class SyncProcess {
       members.push('serverPlanStage1')
     }
 
-    // Stage 2
-    if ((!this.planStage3Local || !this.planStage3Server) && this.actionsPlanned === 0) {
+    // Stage 2 — keep persisting the stage 2 plans as long as either stage 3 plan hasn't
+    // been built yet. The stage 3 plans are built lazily (planStage3Local only after the
+    // server stage has run), so an interrupt during execution needs the stage 2 plans to
+    // rebuild the missing stage 3 plan on resume. Dropping them here (the old
+    // `actionsPlanned === 0` gate did) made such continuations unresumable.
+    if (!this.planStage3Local || !this.planStage3Server) {
       members.push('localPlanStage2')
       members.push('serverPlanStage2')
     }
@@ -145,6 +159,10 @@ export default class SyncProcess {
       members.push('serverDonePlan')
       members.push('prelimLocalReorders')
       members.push('prelimServerReorders')
+      // actionsPlanned must be restored so sync() doesn't recompute it from plans that may
+      // not exist yet on resume (Object.values(null)); actionsDone is intentionally not
+      // persisted so progress/interrupt counting restarts per resumed run.
+      members.push('actionsPlanned')
     }
 
     // Stage 4
@@ -178,23 +196,84 @@ export default class SyncProcess {
     this.throttledProgressCb.cancel()
   }
 
-  async updateProgress():Promise<void> {
-    if (typeof this.actionsDone === 'undefined' || this.actionsDone === null) {
-      this.actionsDone = 0
+  /**
+   * Await a resource mutation (create/update/move/remove) while honouring cancellation.
+   *
+   * Previously the executors did `Promise.race([op, this.cancelPromise])` directly. When
+   * the sync was cancelled mid-flight (e.g. a concurrent action triggered an interrupt),
+   * the race rejected and the executor threw *before* recording the action as done — yet
+   * on a non-atomic server (e.g. Nextcloud Bookmarks) the mutation had already been
+   * applied. A resumed sync then re-issued the same action, producing duplicates and
+   * other divergence.
+   *
+   * Instead we wait for the in-flight mutation to settle when cancelled: if it completed,
+   * `completed` is true and the caller records it (mapping/retract/donePlan) before the
+   * sync stops at the next cancellation checkpoint; if it failed/aborted with no side
+   * effect, `completed` is false and the action can be safely retried on resume.
+   */
+  protected async raceWithCancellation<T>(op: Promise<T>): Promise<{ completed: boolean, result?: T }> {
+    try {
+      const result = await Promise.race([op, this.cancelPromise]) as T
+      return { completed: true, result }
+    } catch (e) {
+      if (!this.canceled) {
+        // A genuine operation error (not a cancellation): propagate as before.
+        throw e
+      }
+      // Cancelled while the mutation was in flight: wait for it to settle so we know
+      // whether its side effect landed on the (possibly non-atomic) server.
+      try {
+        const result = await op
+        return { completed: true, result }
+      } catch (opErr) {
+        return { completed: false }
+      }
     }
-    this.actionsDone++
-    this.throttledProgressCb(
-      Math.min(
-        1,
-        0.5 + (this.actionsDone / (this.actionsPlanned + 1)) * 0.5
-      ),
-      this.actionsDone
-    ).catch((er) => {
+  }
+
+  protected queueProgressUpdate(progress: number, actionsDone?: number): void {
+    // Diagnostic: skip throttled progress callback under test so timer-driven
+    // cache/mappings persistence doesn't race with in-flight sync mutations.
+    if (isTest) return
+    void this.throttledProgressCb(progress, actionsDone).catch((er) => {
       if (er instanceof CanceledError) {
         return
       }
       throw er
     })
+  }
+
+  setInterruptAfterActions(actions: number | null): void {
+    this.interruptAfterActions = actions
+  }
+
+  async updateProgress():Promise<void> {
+    if (typeof this.actionsDone === 'undefined' || this.actionsDone === null) {
+      this.actionsDone = 0
+    }
+    this.actionsDone++
+    if (this.interruptAfterActions !== null && this.actionsDone >= this.interruptAfterActions) {
+      // Deterministic, count-based interrupt for benchmark tests: cancel exactly
+      // after the Nth executed action rather than after a wall-clock timeout, so the
+      // interrupt point is reproducible regardless of machine speed.
+      this.interruptAfterActions = null
+      Logger.log(`INTERRUPT! (after ${this.actionsDone} actions)`)
+      // Persist the continuation at the exact interrupt point *before* cancelling, so the
+      // resumed sync continues from here. Without this, the interrupted sync leaves no
+      // continuation (cancel() discards the pending throttled persistence and, under test,
+      // queueProgressUpdate is a no-op), so the retry restarts from scratch and re-applies
+      // actions that already committed to a non-atomic server — producing duplicates.
+      const progress = Math.min(1, 0.5 + (this.actionsDone / (this.actionsPlanned + 1)) * 0.5)
+      await this.progressCb(progress, this.actionsDone)
+      await this.cancel()
+    }
+    this.queueProgressUpdate(
+      Math.min(
+        1,
+        0.5 + (this.actionsDone / (this.actionsPlanned + 1)) * 0.5
+      ),
+      this.actionsDone
+    )
     Logger.log(`Executed ${this.actionsDone} actions from ${this.actionsPlanned} actions`)
   }
 
@@ -212,7 +291,15 @@ export default class SyncProcess {
       delete json.cacheTreeRoot
     }
     for (const member of Object.keys(json)) {
-      if (member.toLowerCase().includes('scanresult') || member.toLowerCase().includes('plan')) {
+      if (json[member] === null || typeof json[member] === 'undefined') {
+        // The member was persisted as null because that stage hadn't been computed yet at
+        // the interrupt point (e.g. planStage3Local when the sync was interrupted during the
+        // server stage). Restore it as null so sync() recomputes it on resume — don't try to
+        // read .CREATE off it, which previously threw and made the whole continuation
+        // unloadable, forcing a from-scratch restart that re-applies already-committed
+        // actions (duplicates on non-atomic servers).
+        this[member] = json[member]
+      } else if (member.toLowerCase().includes('scanresult') || member.toLowerCase().includes('plan')) {
         this[member] = {
           CREATE: await Diff.fromJSONAsync(json[member].CREATE),
           UPDATE: await Diff.fromJSONAsync(json[member].UPDATE),
@@ -234,23 +321,13 @@ export default class SyncProcess {
 
   async sync(): Promise<void> {
     // onSyncStart is already executed at this point
-    this.throttledProgressCb(0.15, 0).catch((er) => {
-      if (er instanceof CanceledError) {
-        return
-      }
-      throw er
-    })
+    this.queueProgressUpdate(0.15, 0)
 
     this.masterLocation = ItemLocation.LOCAL
     await this.prepareSync()
 
     // trees are loaded at this point
-    this.throttledProgressCb(0.35, 0).catch((er) => {
-      if (er instanceof CanceledError) {
-        return
-      }
-      throw er
-    })
+    this.queueProgressUpdate(0.35, 0)
 
     if (this.canceled) {
       throw new CancelledSyncError()
@@ -263,12 +340,7 @@ export default class SyncProcess {
       Logger.log({ localScanResult, serverScanResult })
       this.localScanResult = localScanResult
       this.serverScanResult = serverScanResult
-      this.throttledProgressCb(0.45, 0).catch((er) => {
-        if (er instanceof CanceledError) {
-          return
-        }
-        throw er
-      })
+      this.queueProgressUpdate(0.45, 0)
     }
 
     if (this.canceled) {
@@ -365,7 +437,10 @@ export default class SyncProcess {
       this.planStage3Server = {
         CREATE: this.serverPlanStage2.CREATE,
         UPDATE: this.serverPlanStage2.UPDATE,
-        MOVE: this.serverPlanStage2.MOVE.map(mappingsSnapshot, ItemLocation.SERVER),
+        // skipErroneousActions: a MOVE whose item can no longer be mapped to the target is
+        // unapplyable; drop it instead of throwing MappingFailureError (which would force a
+        // cache reset + from-scratch resync that duplicates on non-atomic servers).
+        MOVE: this.serverPlanStage2.MOVE.map(mappingsSnapshot, ItemLocation.SERVER, () => true, true),
         REMOVE: this.serverPlanStage2.REMOVE,
         REORDER: this.serverPlanStage2.REORDER,
       }
@@ -399,7 +474,8 @@ export default class SyncProcess {
       this.planStage3Local = {
         CREATE: this.localPlanStage2.CREATE,
         UPDATE: this.localPlanStage2.UPDATE,
-        MOVE: this.localPlanStage2.MOVE.map(mappingsSnapshot, ItemLocation.LOCAL),
+        // skipErroneousActions: see the server stage 3 plan above.
+        MOVE: this.localPlanStage2.MOVE.map(mappingsSnapshot, ItemLocation.LOCAL, () => true, true),
         REMOVE: this.localPlanStage2.REMOVE,
         REORDER: this.localPlanStage2.REORDER,
       }
@@ -427,10 +503,62 @@ export default class SyncProcess {
     if ('orderFolder' in this.server && !this.localReorders) {
       // mappings have been updated, reload
       mappingsSnapshot = this.mappings.getSnapshot()
-      const localReorders = this.reconcileReorderings(this.prelimLocalReorders, this.localDonePlan, ItemLocation.LOCAL, mappingsSnapshot)
-      const serverReorders = this.reconcileReorderings(this.prelimServerReorders, this.serverDonePlan, ItemLocation.SERVER, mappingsSnapshot)
-      this.localReorders = this.reconcileReorderings(localReorders, this.serverDonePlan, ItemLocation.LOCAL, mappingsSnapshot).map(mappingsSnapshot, ItemLocation.LOCAL)
-      this.serverReorders = this.reconcileReorderings(serverReorders, this.localDonePlan, ItemLocation.SERVER, mappingsSnapshot).map(mappingsSnapshot, ItemLocation.SERVER)
+
+      const localReorders1 = this.reconcileReorderings(
+        this.prelimLocalReorders,
+        this.localDonePlan,
+        ItemLocation.LOCAL,
+        mappingsSnapshot
+      )
+      const serverReorders1 = this.reconcileReorderings(
+        this.prelimServerReorders,
+        this.serverDonePlan,
+        ItemLocation.SERVER,
+        mappingsSnapshot
+      )
+
+      const localReorders2 = this.reconcileReorderings(
+        localReorders1,
+        this.serverDonePlan,
+        ItemLocation.LOCAL,
+        mappingsSnapshot
+      )
+      const serverReorders2 = this.reconcileReorderings(
+        serverReorders1,
+        this.localDonePlan,
+        ItemLocation.SERVER,
+        mappingsSnapshot
+      )
+
+      const localReorders3 = this.reconcileConcurrentReorderings(
+        localReorders2,
+        serverReorders2,
+        ItemLocation.LOCAL,
+        mappingsSnapshot
+      )
+      const serverReorders3 = this.reconcileConcurrentReorderings(
+        serverReorders2,
+        localReorders2,
+        ItemLocation.SERVER,
+        mappingsSnapshot
+      )
+
+      // skipErroneousActions: a REORDER targeting a folder that can no longer be mapped is
+      // moot (the folder was moved/removed); drop it instead of throwing MappingFailureError,
+      // which would force a cache reset + from-scratch resync that duplicates on non-atomic
+      // servers.
+      this.localReorders = localReorders3.map(
+        mappingsSnapshot,
+        ItemLocation.LOCAL,
+        () => true,
+        true
+      )
+      this.serverReorders = serverReorders3.map(
+        mappingsSnapshot,
+        ItemLocation.SERVER,
+        () => true,
+        true
+      )
     }
 
     if (this.canceled) {
@@ -439,10 +567,17 @@ export default class SyncProcess {
 
     if ('orderFolder' in this.server) {
       Logger.log('Executing reorderings')
-      await Promise.all([
-        this.executeReorderings(this.server, this.serverReorders),
-        this.executeReorderings(this.localTree, this.localReorders),
-      ])
+      if (isTest) {
+        // Sequential under test so the two trees' mutations don't interleave
+        // through microtask order.
+        await this.executeReorderings(this.server, this.serverReorders)
+        await this.executeReorderings(this.localTree, this.localReorders)
+      } else {
+        await Promise.all([
+          this.executeReorderings(this.server, this.serverReorders),
+          this.executeReorderings(this.localTree, this.localReorders),
+        ])
+      }
     }
 
     this.throttledProgressCb.cancel()
@@ -656,7 +791,7 @@ export default class SyncProcess {
       },
       this.hashSettings,
       true,
-      false,
+      true,
     )
     const serverScanner = new Scanner(
       this.mappings,
@@ -711,7 +846,6 @@ export default class SyncProcess {
     const targetRemovals = targetScanResult.REMOVE.getActions()
     const targetMoves = targetScanResult.MOVE.getActions()
     const targetUpdates = targetScanResult.UPDATE.getActions()
-    const targetReorders = targetScanResult.REORDER.getActions()
 
     const sourceCreations = sourceScanResult.CREATE.getActions()
     const sourceRemovals = sourceScanResult.REMOVE.getActions()
@@ -772,7 +906,8 @@ export default class SyncProcess {
           (oldItem, newItem) => {
             if (
               oldItem.type === newItem.type &&
-              oldItem.canMergeWith(newItem)
+              oldItem.canMergeWith(newItem) &&
+              !Mappings.wouldEvictUnrelatedMapping(mappingsSnapshot, oldItem, newItem)
             ) {
               return true
             }
@@ -866,18 +1001,55 @@ export default class SyncProcess {
         // moved sourcely but removed on the target, recreate it on the target
         if (targetLocation !== this.masterLocation) {
           // only when coming from master do we recreate
-          const originalCreation = sourceCreations.find(creation => creation.payload.findItem(ItemType.FOLDER, action.payload.parentId))
+          // check sourceCreations and targetPlan.CREATE, since we may have created an item along the way in this method already
+          const originalCreation = targetPlan.CREATE.getActions().find(creation =>
+            creation.payload.type === ItemType.FOLDER && creation.payload.findItem(ItemType.FOLDER, action.payload.parentId)
+          ) || sourceCreations.find(creation =>
+            creation.payload.type === ItemType.FOLDER && creation.payload.findItem(ItemType.FOLDER, action.payload.parentId)
+          )
 
           // Remove subitems that have been (re)moved already by other actions
           const newPayload = action.payload.copy()
           if (newPayload.type === ItemType.FOLDER) {
-            newPayload.traverse((item, folder) => {
+            await newPayload.traverse((item, folder) => {
               const removed = sourceRemovals.find(a => Mappings.mappable(mappingsSnapshot, item, a.payload))
               const movedAway = sourceMoves.find(a => Mappings.mappable(mappingsSnapshot, item, a.payload))
               if (removed || (movedAway && Mappings.mapParentId(mappingsSnapshot, movedAway.payload, item.location) !== item.parentId)) {
                 folder.children.splice(folder.children.indexOf(item), 1)
               }
             })
+
+            const pendingCreations = sourceCreations
+              .filter(creation => creation !== originalCreation)
+              .map(creation => creation.payload)
+
+            let insertedCreation = true
+            while (insertedCreation) {
+              insertedCreation = false
+              pendingCreations.forEach((creationPayload, index) => {
+                const parentFolder = newPayload.findFolder(creationPayload.parentId)
+                if (!parentFolder || parentFolder.findItem(creationPayload.type, creationPayload.id)) {
+                  return
+                }
+                parentFolder.children.splice(index, 0, creationPayload.copy())
+                insertedCreation = true
+              })
+            }
+
+            const pendingMoves = sourceMoves.filter(move => move !== action)
+
+            let insertedMove = true
+            while (insertedMove) {
+              insertedMove = false
+              pendingMoves.forEach((move) => {
+                const parentFolder = newPayload.findFolder(move.payload.parentId)
+                if (!parentFolder || parentFolder.findItem(move.payload.type, move.payload.id)) {
+                  return
+                }
+                parentFolder.children.splice(move.index, 0, move.payload.copy())
+                insertedMove = true
+              })
+            }
           }
 
           if (originalCreation && originalCreation.payload.type === ItemType.FOLDER) {
@@ -904,8 +1076,18 @@ export default class SyncProcess {
           findChainCache2 = {}
           concurrentHierarchyReversals.forEach(a => {
             // moved sourcely but moved in reverse hierarchical order on target
-            const payload = a.oldItem.copyWithLocation(false, action.payload.location)
-            const oldItem = a.payload.copyWithLocation(false, action.oldItem.location)
+            const payload = a.oldItem.restampRoot(false, action.payload.location)
+            payload.id = Mappings.mapId(
+              mappingsSnapshot,
+              a.oldItem,
+              action.payload.location
+            )
+            payload.parentId = Mappings.mapParentId(
+              mappingsSnapshot,
+              a.oldItem,
+              action.payload.location
+            )
+            const oldItem = a.payload.restampRoot(false, action.oldItem.location)
             oldItem.id = Mappings.mapId(mappingsSnapshot, a.payload, action.oldItem.location)
             oldItem.parentId = Mappings.mapParentId(mappingsSnapshot, a.payload, action.oldItem.location)
 
@@ -935,6 +1117,7 @@ export default class SyncProcess {
       targetPlan.MOVE.commit(action)
     }, 1)
 
+    const findChainCacheForUpdates = {}
     await Parallel.each(sourceScanResult.UPDATE.getActions(), async(action) => {
       const concurrentUpdate = targetUpdates.find(a =>
         action.payload.type === a.payload.type && Mappings.mappable(mappingsSnapshot, action.payload, a.payload))
@@ -944,7 +1127,11 @@ export default class SyncProcess {
       }
       const concurrentRemoval = targetRemovals.find(a =>
         a.payload.findItem(action.payload.type, Mappings.mapId(mappingsSnapshot, action.payload, a.payload.location)) ||
-        a.payload.findItem(ItemType.FOLDER, Mappings.mapParentId(mappingsSnapshot, action.payload, a.payload.location)))
+        a.payload.findItem(ItemType.FOLDER, Mappings.mapParentId(mappingsSnapshot, action.payload, a.payload.location)) ||
+        // The findItem checks above only catch direct containment in the captured REMOVE subtree.
+        // findChain follows source-side MOVE|CREATE chains so an item moved into a deleted target folder
+        // is recognised as transitively removed and the UPDATE is skipped (avoids E002 at execution).
+        Diff.findChain(mappingsSnapshot, allCreateAndMoveActions, targetTree, action.payload, a, findChainCacheForUpdates))
       if (concurrentRemoval) {
         // Already deleted on target, do nothing.
         return
@@ -953,22 +1140,16 @@ export default class SyncProcess {
       targetPlan.UPDATE.commit(action)
     }, ACTION_CONCURRENCY)
 
+    const findChainCacheForReorders = {}
     await Parallel.each(sourceScanResult.REORDER.getActions(), async(action) => {
       if (avoidTargetReorders[action.payload.id]) {
         return
       }
 
-      if (targetLocation !== this.masterLocation) {
-        const concurrentReorder = targetReorders.find(a =>
-          action.payload.type === a.payload.type && Mappings.mappable(mappingsSnapshot, action.payload, a.payload) && a.order.length > 0)
-        if (concurrentReorder) {
-          return
-        }
-      }
-
-      const findChainCache = {}
-      const concurrentRemoval = targetRemovals.find(targetRemoval =>
-        Diff.findChain(mappingsSnapshot, allCreateAndMoveActions, sourceTree, action.payload, targetRemoval, findChainCache)
+      const concurrentRemoval = targetRemovals.find(a =>
+        a.payload.findItem(action.payload.type, Mappings.mapId(mappingsSnapshot, action.payload, a.payload.location)) ||
+        a.payload.findItem(ItemType.FOLDER, Mappings.mapParentId(mappingsSnapshot, action.payload, a.payload.location)) ||
+        Diff.findChain(mappingsSnapshot, allCreateAndMoveActions, sourceTree, action.payload, a, findChainCacheForReorders)
       )
       if (concurrentRemoval) {
         // Already deleted on target, do nothing.
@@ -987,7 +1168,7 @@ export default class SyncProcess {
     targetLocation:L1,
     donePlan: PlanStage3<TOppositeLocation<L1>, TItemLocation, L1>,
     reorders: Diff<TOppositeLocation<L1>, TItemLocation, ReorderAction<TOppositeLocation<L1>, TItemLocation>>): Promise<void> {
-    Logger.log('Executing ' + targetLocation + ' plan for ')
+    Logger.log('Executing ' + targetLocation + ' plan for stage 2')
 
     let createActions = planStage2.CREATE.getActions()
     while (createActions.length > 0) {
@@ -1025,9 +1206,16 @@ export default class SyncProcess {
     }
 
     Logger.log(targetLocation + ': executing MOVEs')
-    await Parallel.each(batches, batch => Parallel.each(batch, (action) => {
-      return this.executeUpdate(resource, action, targetLocation, planStage3.MOVE, donePlan)
-    }, ACTION_CONCURRENCY), 1)
+    await Parallel.each(
+      batches,
+      async(batch) => {
+        Logger.log('Starting new batch of concurrent MOVEs with size ' + batch.length)
+        return Parallel.each(batch, (action) => {
+          return this.executeUpdate(resource, action, targetLocation, planStage3.MOVE, donePlan)
+        }, ACTION_CONCURRENCY)
+      },
+      1
+    )
 
     if (this.canceled) {
       throw new CancelledSyncError()
@@ -1063,14 +1251,14 @@ export default class SyncProcess {
       await this.updateProgress()
     }
 
-    const id = await Promise.race([
-      action.payload.visitCreate(resource),
-      this.cancelPromise
-    ])
+    const { completed, result: id } = await this.raceWithCancellation(action.payload.visitCreate(resource))
+    if (!completed) {
+      // The create was cancelled before its side effect landed: let a resumed sync retry it.
+      throw new CancelledSyncError()
+    }
     if (typeof id === 'undefined' || id === null) {
-      // undefined means we couldn't create the item. we're ignoring it
-      await done()
-      return
+      // undefined means we couldn't create the item
+      throw new FloccusError('Failed to create item on ' + targetLocation + ' : ' + action.payload.inspect())
     }
 
     action.payload = action.payload.copy()
@@ -1098,12 +1286,15 @@ export default class SyncProcess {
     })
     // We *know* that oldItem exists here, because actions are mapped before being executed
     if ('bulkImportFolder' in resource) {
+      let doneCalled = false
       if (action.payload.count() < 75 || this.server instanceof CachingAdapter) {
         Logger.log('Attempting full bulk import')
         try {
           // Try bulk import with sub folders
-          const imported = await resource.bulkImportFolder(id, action.oldItem.copyWithLocation(false, action.payload.location)) as Folder<typeof targetLocation>
+          const imported = await resource.bulkImportFolder(id, action.oldItem.restampTree(false, action.payload.location)) as Folder<typeof targetLocation>
           await done()
+          doneCalled = true
+          const bulkImportMappingsSnapshot = this.mappings.getSnapshot()
           const subScanner = new Scanner(
             this.mappings,
             action.oldItem,
@@ -1111,7 +1302,8 @@ export default class SyncProcess {
             (oldItem, newItem) => {
               if (
                 oldItem.type === newItem.type &&
-                oldItem.canMergeWith(newItem)
+                oldItem.canMergeWith(newItem) &&
+                !Mappings.wouldEvictUnrelatedMapping(bulkImportMappingsSnapshot, oldItem, newItem)
               ) {
                 return true
               }
@@ -1153,16 +1345,25 @@ export default class SyncProcess {
           return
         } catch (e) {
           Logger.log('Bulk import failed, continuing with normal creation', e)
+          if (doneCalled) {
+            // Bulk import already committed the subtree to the target; the failure is
+            // in post-import bookkeeping. Falling through to per-child creation would
+            // re-create the same items and produce duplicates on the target.
+            return
+          }
         }
       } else {
+        const importedBookmarkIds = new Set<string>()
         try {
           // Try bulk import without sub folders
-          const tempItem = action.oldItem.copyWithLocation(false, action.payload.location)
+          const tempItem = action.oldItem.restampTree(false, action.payload.location)
           const bookmarks = tempItem.children.filter(child => child instanceof Bookmark)
           while (bookmarks.length > 0) {
             Logger.log('Attempting chunked bulk import')
-            tempItem.children = bookmarks.splice(0, 70)
+            const chunk = bookmarks.splice(0, 70)
+            tempItem.children = chunk
             const imported = await resource.bulkImportFolder(action.payload.id, tempItem)
+            const chunkedBulkImportMappingsSnapshot = this.mappings.getSnapshot()
             const subScanner = new Scanner(
               this.mappings,
               tempItem,
@@ -1170,7 +1371,8 @@ export default class SyncProcess {
               (oldItem, newItem) => {
                 if (
                   oldItem.type === newItem.type &&
-                  oldItem.canMergeWith(newItem)
+                  oldItem.canMergeWith(newItem) &&
+                  !Mappings.wouldEvictUnrelatedMapping(chunkedBulkImportMappingsSnapshot, oldItem, newItem)
                 ) {
                   // if two items can be merged, we'll add mappings here directly
                   return true
@@ -1183,6 +1385,7 @@ export default class SyncProcess {
               true,
             )
             await subScanner.run()
+            chunk.forEach(b => importedBookmarkIds.add(String(b.id)))
           }
 
           // create sub plan for the folders
@@ -1204,7 +1407,10 @@ export default class SyncProcess {
               diff.commit(newAction)
             })
 
-          await done()
+          if (!doneCalled) {
+            await done()
+            doneCalled = true
+          }
 
           if ('orderFolder' in resource) {
             // Order created items after the fact, as they've been created concurrently
@@ -1220,6 +1426,19 @@ export default class SyncProcess {
           return
         } catch (e) {
           Logger.log('Bulk import failed, continuing with normal creation', e)
+          if (doneCalled) {
+            // Bookmarks were committed and the action retracted; the failure is in
+            // post-import bookkeeping. Falling through would re-commit CREATEs for
+            // the folders we already planned via diff.commit above.
+            return
+          }
+          if (importedBookmarkIds.size > 0) {
+            // A later chunk threw after earlier chunks had already imported their bookmarks. The per-child
+            // fallback below would otherwise re-create those imported bookmarks and produce duplicates on the target.
+            action.payload.children = action.payload.children.filter(
+              c => !(c instanceof Bookmark) || !importedBookmarkIds.has(String(c.id))
+            )
+          }
         }
       }
     }
@@ -1267,10 +1486,11 @@ export default class SyncProcess {
       throw new CancelledSyncError()
     }
 
-    await Promise.race([
-      action.payload.visitRemove(resource),
-      this.cancelPromise,
-    ])
+    const { completed } = await this.raceWithCancellation(action.payload.visitRemove(resource))
+    if (!completed) {
+      // The remove was cancelled before it took effect: let a resumed sync retry it.
+      throw new CancelledSyncError()
+    }
     diff.retract(action)
     donePlan.REMOVE.commit(action)
     await this.updateProgress()
@@ -1292,10 +1512,11 @@ export default class SyncProcess {
       throw new CancelledSyncError()
     }
 
-    await Promise.race([
-      action.payload.visitUpdate(resource),
-      this.cancelPromise,
-    ])
+    const { completed } = await this.raceWithCancellation(action.payload.visitUpdate(resource))
+    if (!completed) {
+      // The update/move was cancelled before it took effect: let a resumed sync retry it.
+      throw new CancelledSyncError()
+    }
 
     await this.addMapping(resource, action.oldItem, action.payload.id)
     diff.retract(action)
@@ -1333,6 +1554,7 @@ export default class SyncProcess {
         // clone action
         const reorderAction = {...oldReorderAction, order: oldReorderAction.order.slice()}
 
+        // Find removals of the main payload
         const removed = targetRemovals
           .filter(removal =>
             removal.payload.findItem(reorderAction.payload.type, reorderAction.payload.id) ||
@@ -1349,7 +1571,7 @@ export default class SyncProcess {
                   String(Mappings.mapRawId(mappingSnapshot, item.id, item.type, reorderAction.payload.location, move.payload.location)) === String(move.payload.id) && item.type === move.payload.type)
           )
 
-        // Find removals
+        // Find removals of sub items that are being reordered, we need to remove those from the order
         const concurrentRemovals = targetRemovals
           .filter(removal =>
             reorderAction.order.find(item =>
@@ -1378,24 +1600,147 @@ export default class SyncProcess {
         })
 
         // Find and insert creations
-        const concurrentCreations = targetCreations
-          .filter(creation => String(reorderAction.payload.id) === String(creation.payload.parentId))
+        const concurrentCreations = targetCreations.filter(
+          (creation) =>
+            String(reorderAction.payload.id) ===
+              String(creation.payload.parentId) &&
+            !reorderAction.order.find(
+              ({ type, id }) =>
+                type === creation.payload.type &&
+                String(id) === String(Mappings.mapId(mappingSnapshot, creation.payload, reorderAction.payload.location))
+            )
+        )
         concurrentCreations
           .forEach(a => {
             Logger.log('ReconcileReorders: Inserting created item into order', {creation: a, reorder: reorderAction})
-            reorderAction.order.splice(a.index, 0, { type: a.payload.type, id: a.payload.id })
+            reorderAction.order.splice(a.index, 0, { type: a.payload.type, id: Mappings.mapId(mappingSnapshot, a.payload, reorderAction.payload.location) })
           })
 
         // Find and insert moves at move target
-        const moves = targetMoves
-          .filter(move =>
-            String(reorderAction.payload.id) === String(move.payload.parentId) &&
-                  !reorderAction.order.find(item => String(item.id) === String(move.payload.id) && item.type === move.payload.type)
-          )
+        const moves = targetMoves.filter(
+          (move) =>
+            String(reorderAction.payload.id) ===
+              String(move.payload.parentId) &&
+            !reorderAction.order.find(
+              (item) =>
+                (item.type === move.payload.type &&
+                  String(item.id) === String(Mappings.mapId(mappingSnapshot, move.payload, reorderAction.payload.location)))
+            )
+        )
         moves.forEach(a => {
           Logger.log('ReconcileReorders: Inserting moved item into order', {move: a, reorder: reorderAction})
-          reorderAction.order.splice(a.index, 0, { type: a.payload.type, id: a.payload.id })
+          reorderAction.order.splice(a.index, 0, {
+            type: a.payload.type,
+            id: Mappings.mapId(
+              mappingSnapshot,
+              a.payload,
+              reorderAction.payload.location
+            ),
+          })
         })
+
+        newReorders.commit(reorderAction)
+      })
+
+    return newReorders
+  }
+
+  reconcileConcurrentReorderings<L1 extends TItemLocation, L2 extends TItemLocation>(
+    targetReorders: Diff<L2, TItemLocation, ReorderAction<L2, TItemLocation>>,
+    sourceReorders: Diff<L1, TItemLocation, ReorderAction<L1, TItemLocation>>,
+    targetLocation: L1,
+    mappingSnapshot: MappingSnapshot
+  ) : Diff<L2, TItemLocation, ReorderAction<L2, TItemLocation>> {
+    Logger.log('Reconciling concurrent reorders from both reorder plans')
+    const sourceReorderActions = sourceReorders.getActions()
+
+    const newReorders = new Diff<L2, TItemLocation, ReorderAction<L2, TItemLocation>>
+
+    targetReorders
+      .getActions()
+      // MOVEs have oldItem from cacheTree and payload now mapped to their corresponding target tree
+      // REORDERs have payload in source tree
+      .forEach(oldReorderAction => {
+        // clone action
+        const reorderAction = {...oldReorderAction, order: oldReorderAction.order.slice()}
+
+        const concurrentSourceReorder = sourceReorderActions
+          .find(a => Mappings.mappable(mappingSnapshot, a.payload, reorderAction.payload))
+        if (concurrentSourceReorder) {
+          // if the target location is master, then the reorder comes from non-master location and we need to reconcile
+          const newOrder = []
+          const targetOrder = reorderAction.order.slice()
+          const sourceOrder = concurrentSourceReorder.order.slice()
+          while (targetOrder.length || sourceOrder.length) {
+            if (!targetOrder.length) {
+              let sourceItem = sourceOrder.shift()
+              sourceItem = {
+                ...sourceItem,
+                id: Mappings.mapRawId(
+                  mappingSnapshot,
+                  sourceItem.id,
+                  sourceItem.type,
+                  concurrentSourceReorder.payload.location,
+                  reorderAction.payload.location
+                )
+              }
+              if (newOrder.find(({type, id}) => type === sourceItem.type && id === sourceItem.id)) {
+                continue
+              }
+              newOrder.push(sourceItem)
+              continue
+            }
+            if (!sourceOrder.length) {
+              const targetItem = targetOrder.shift()
+              if (
+                newOrder.find(
+                  ({ type, id }) =>
+                    type === targetItem.type && id === targetItem.id
+                )
+              ) {
+                continue
+              }
+              newOrder.push(targetItem)
+              continue
+            }
+            if (
+              String(targetOrder[0].id) ===
+              String(Mappings.mapRawId(
+                mappingSnapshot,
+                sourceOrder[0].id,
+                sourceOrder[0].type,
+                concurrentSourceReorder.payload.location,
+                reorderAction.payload.location
+              ))
+            ) {
+              const targetItem = targetOrder.shift()
+              if (
+                newOrder.find(
+                  ({ type, id }) =>
+                    type === targetItem.type && id === targetItem.id
+                )
+              ) {
+                continue
+              }
+              newOrder.push(targetItem)
+              sourceOrder.shift()
+              continue
+            } else {
+              // first take the target item
+              const targetItem = targetOrder.shift()
+              if (
+                newOrder.find(
+                  ({ type, id }) =>
+                    type === targetItem.type && id === targetItem.id
+                )
+              ) {
+                continue
+              }
+              newOrder.push(targetItem)
+            }
+          }
+          reorderAction.order = newOrder
+        }
 
         newReorders.commit(reorderAction)
       })

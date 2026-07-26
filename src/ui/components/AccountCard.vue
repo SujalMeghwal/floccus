@@ -239,8 +239,8 @@ export default {
   props: {
     account: {
       type: Object,
-      required: true
-    }
+      required: true,
+    },
   },
   data() {
     return {
@@ -257,14 +257,14 @@ export default {
         ok: 'mdi-check-circle-outline',
         error: 'mdi-alert-circle-outline',
         syncing: 'mdi-sync',
-        scheduled: 'mdi-timer-sync-outline'
+        scheduled: 'mdi-timer-sync-outline',
       },
       statusLabels: {
         disabled: this.t('StatusDisabled'),
         ok: this.t('StatusAllgood'),
         error: this.t('StatusError'),
         syncing: this.t('StatusSyncing'),
-        scheduled: this.t('StatusScheduled')
+        scheduled: this.t('StatusScheduled'),
       },
       typeIcons: {
         'git': 'mdi-git',
@@ -298,7 +298,7 @@ export default {
       if (this.account.data.syncing) return 'syncing'
       if (this.account.data.scheduled) return 'scheduled'
       if (this.account.data.error) return 'error'
-      if (!this.account.data.enabled && !this.account.data.syncIntervalEnabled) return 'disabled'
+      if (!this.account.data.enabled && !this.account.data.syncIntervalEnabled && !this.account.data.syncOnStartupEnabled) return 'disabled'
       return 'ok'
     },
     statusIcon() {
@@ -330,12 +330,12 @@ export default {
     },
     routes() {
       return routes
-    }
+    },
   },
   watch: {
     async localRoot(localRoot) {
       this.rootPath = await BrowserTree.getPathFromLocalId(localRoot)
-    }
+    },
   },
   async created() {
     this.rootPath = await BrowserTree.getPathFromLocalId(this.localRoot)
@@ -451,6 +451,30 @@ export default {
 
 .spinning {
   animation: spin 1.2s infinite linear;
+}
+
+@media (min-width: 420px) {
+  .account-card__statusColumn {
+    min-width: max-content;
+  }
+}
+
+@media (max-width: 419px) {
+  .account-card__header {
+    flex-direction: column;
+  }
+  .account-card__footer {
+    flex-direction: column !important;
+  }
+  .account-card__actions {
+    flex-direction: column !important;
+  }
+  .account-card__actions .ml-0 {
+    margin-left: 4px !important;
+  }
+  .account-card__options {
+    flex-direction: column !important;
+  }
 }
 
 @keyframes spin {

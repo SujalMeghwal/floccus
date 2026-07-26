@@ -8,7 +8,6 @@ import BrowserAccountStorage from './BrowserAccountStorage'
 import uniqBy from 'lodash/uniqBy'
 import Account from '../Account'
 import { STATUS_ALLGOOD, STATUS_DISABLED, STATUS_ERROR, STATUS_SYNCING } from '../interfaces/Controller'
-import { initSharp } from '../sentry'
 import { onWakeUp } from '../on-wake-up'
 
 const INACTIVITY_TIMEOUT = 1500 // 1.5 seconds
@@ -230,7 +229,7 @@ export default class BrowserController {
     })
 
     // Run some things on browser startup
-    browser.runtime.onStartup.addListener(this.onStartup)
+    browser.runtime.onStartup.addListener(() => this.onStartup())
   }
 
   async _receiveEvent(data, sendResponse) {
@@ -470,7 +469,14 @@ export default class BrowserController {
     }, STATUS_ALLGOOD)
 
     if (overallStatus === STATUS_ALLGOOD) {
-      if (accounts.every(account => !account.getData().enabled && !account.getData().syncIntervalEnabled)) {
+      if (
+        accounts.every(
+          (account) =>
+            !account.getData().enabled &&
+            !account.getData().syncIntervalEnabled &&
+            !account.getData().syncOnStartupEnabled
+        )
+      ) {
         // if status is allgood but no account is enabled, show disabled
         overallStatus = STATUS_DISABLED
       }
@@ -514,17 +520,14 @@ export default class BrowserController {
         if (acc.getData().localRoot === 'tabs') {
           await acc.init()
         }
+        if (acc.getData().syncOnStartupEnabled) {
+          this.scheduleSync(acc.id)
+        }
       })
     )
   }
 
   async onLoad() {
-    browser.storage.local.get('telemetryEnabled').then(async d => {
-      if (!d.telemetryEnabled) {
-        return
-      }
-      initSharp()
-    })
     const accounts = await Account.getAllAccounts()
     await Promise.all(
       accounts.map(async acc => {

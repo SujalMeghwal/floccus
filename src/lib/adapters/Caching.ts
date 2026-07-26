@@ -7,7 +7,7 @@ import difference from 'lodash/difference'
 import Ordering from '../interfaces/Ordering'
 import {
   UnknownBookmarkUpdateError,
-  UnknownCreateTargetError, UnknownFolderItemOrderError, UnknownFolderOrderError, UnknownFolderUpdateError,
+  UnknownCreateTargetError, UnknownFolderOrderError, UnknownFolderUpdateError,
   UnknownMoveOriginError,
   UnknownMoveTargetError
 } from '../../errors/Error'
@@ -18,10 +18,11 @@ export default class CachingAdapter implements Adapter, BulkImportResource<TItem
   protected highestId: number
   public bookmarksCache: Folder<TItemLocation>
   protected server: any
-  protected location: TItemLocation = ItemLocation.SERVER
+  protected location: TItemLocation
   protected hashSettings: IHashSettings
 
   constructor(server: any) {
+    this.location = ItemLocation.SERVER
     this.resetCache()
   }
 
@@ -73,7 +74,7 @@ export default class CachingAdapter implements Adapter, BulkImportResource<TItem
 
   async createBookmark(bm:Bookmark<TItemLocation>):Promise<string|number> {
     Logger.log('CREATE', bm)
-    bm = bm.copyWithLocation(true, this.location)
+    bm = bm.restampTree(true, this.location)
     bm.id = ++this.highestId
     const foundFolder = this.bookmarksCache.findFolder(bm.parentId)
     if (!foundFolder) {
@@ -105,15 +106,16 @@ export default class CachingAdapter implements Adapter, BulkImportResource<TItem
     if (!foundNewFolder) {
       throw new UnknownMoveTargetError()
     }
-    foundOldFolder.children.splice(
-      foundOldFolder.children.indexOf(foundBookmark),
-      1
-    )
-
-    this.bookmarksCache.removeFromIndex(foundBookmark)
-    foundNewFolder.children.push(foundBookmark)
-    foundBookmark.parentId = newBm.parentId
-    this.bookmarksCache.updateIndex(foundBookmark)
+    if (foundOldFolder.id !== foundNewFolder.id) {
+      foundOldFolder.children.splice(
+        foundOldFolder.children.indexOf(foundBookmark),
+        1
+      )
+      this.bookmarksCache.removeFromIndex(foundBookmark)
+      foundNewFolder.children.push(foundBookmark)
+      foundBookmark.parentId = newBm.parentId
+      this.bookmarksCache.updateIndex(foundBookmark)
+    }
   }
 
   async removeBookmark(bookmark:Bookmark<TItemLocation>): Promise<void> {
@@ -167,12 +169,17 @@ export default class CachingAdapter implements Adapter, BulkImportResource<TItem
     if (oldFolder.findFolder(foundNewParentFolder.id)) {
       throw new Error('Detected creation of folder loop: Moving ' + id + ' to ' + folder.parentId + ', but it already contains the new parent node')
     }
-    foundOldParentFolder.children.splice(foundOldParentFolder.children.indexOf(oldFolder), 1)
-    foundNewParentFolder.children.push(oldFolder)
-    this.bookmarksCache.removeFromIndex(oldFolder)
     oldFolder.title = folder.title
-    oldFolder.parentId = folder.parentId
-    this.bookmarksCache.updateIndex(oldFolder)
+    if (foundOldParentFolder.id !== foundNewParentFolder.id) {
+      foundOldParentFolder.children.splice(
+        foundOldParentFolder.children.indexOf(oldFolder),
+        1
+      )
+      foundNewParentFolder.children.push(oldFolder)
+      this.bookmarksCache.removeFromIndex(oldFolder)
+      oldFolder.parentId = folder.parentId
+      this.bookmarksCache.updateIndex(oldFolder)
+    }
   }
 
   async orderFolder(id:string|number, order:Ordering<TItemLocation>):Promise<void> {
@@ -186,7 +193,8 @@ export default class CachingAdapter implements Adapter, BulkImportResource<TItem
     order.forEach(item => {
       const child = folder.findItem(item.type, item.id)
       if (!child || String(child.parentId) !== String(folder.id)) {
-        throw new UnknownFolderItemOrderError(id + ':' + JSON.stringify(item))
+        Logger.log('ORDERFOLDER: skipping item ', item)
+        return
       }
       newChildren.push(child)
     })
@@ -229,7 +237,7 @@ export default class CachingAdapter implements Adapter, BulkImportResource<TItem
       throw new UnknownCreateTargetError()
     }
     // clone and adjust ids
-    const imported = folder.copy()
+    const imported = folder.restampTree(true, this.location)
     imported.id = id
     await imported.traverse(async(item, parentFolder) => {
       item.id = ++this.highestId

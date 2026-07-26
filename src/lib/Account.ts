@@ -10,11 +10,10 @@ import { OrderFolderResource, TLocalTree } from './interfaces/Resource'
 import IAccount from './interfaces/Account'
 import Mappings from './Mappings'
 import { isTest } from './isTest'
-import { setUser, setContext, withScope, captureException } from '@sentry/browser'
 import AsyncLock from 'async-lock'
 import CachingTreeWrapper from './CachingTreeWrapper'
 import {
-  ClientsideAdditionFailsafeError, ClientsideDeletionFailsafeError,
+  ClientsideAdditionFailsafeError, ClientsideDeletionFailsafeError, FloccusError,
   InterruptedSyncError,
   NetworkError,
   ServersideAdditionFailsafeError, ServersideDeletionFailsafeError, TransientError,
@@ -33,6 +32,10 @@ AdapterFactory.register('git', async() => (await import('./adapters/Git')).defau
 AdapterFactory.register('google-drive', async() => (await import('./adapters/GoogleDrive')).default)
 AdapterFactory.register('dropbox', async() => (await import('./adapters/Dropbox')).default)
 AdapterFactory.register('fake', async() => (await import('./adapters/Fake')).default)
+AdapterFactory.register(
+  'fake-nc-bookmarks',
+  async () => (await import('./adapters/FakeNcBookmarks')).default
+)
 
 // 2h
 const LOCK_TIMEOUT = 1000 * 60 * 60 * 2
@@ -74,7 +77,7 @@ export default class Account {
 
   static async import(accounts:IAccountData[]):Promise<void> {
     for (const accountData of accounts) {
-      await this.create({...accountData, enabled: false, syncIntervalEnabled: false})
+      await this.create({...accountData, enabled: false, syncIntervalEnabled: false, syncOnStartupEnabled: false})
     }
   }
 
@@ -86,6 +89,9 @@ export default class Account {
 
   public id: string
   public syncing: boolean
+  // Test-only hook: invoked with each freshly created sync process so benchmark
+  // tests can configure a deterministic, count-based interrupt.
+  public onSyncProcessCreated: ((syncProcess: DefaultSyncProcess) => void) | null = null
   protected syncProcess: DefaultSyncProcess
   protected storage: IAccountStorage
   protected server: TAdapter
@@ -118,6 +124,7 @@ export default class Account {
       localRoot: null,
       strategy: 'default' as TAccountStrategy,
       syncInterval: 15,
+      syncOnStartupEnabled: false,
       nestedSync: false,
       failsafe: true,
       allowNetwork: false,
@@ -128,6 +135,9 @@ export default class Account {
     }
     if (!('syncIntervalEnabled' in data) && 'enabled' in data) {
       data.syncIntervalEnabled = data.enabled
+    }
+    if (!IS_BROWSER) {
+      data.syncIntervalEnabled = false
     }
     if ('type' in data && data.type === 'nextcloud-folders') {
       data.type = 'nextcloud-bookmarks'
@@ -186,7 +196,6 @@ export default class Account {
       this.localCachingResource = new CachingTreeWrapper(await this.getResource())
 
       Logger.log('Starting sync process for account ' + this.getLabel())
-      setUser({ id: this.id })
       this.syncing = true
       await this.setData({ syncing: 0.05, scheduled: false, error: null, lastAttempt: Date.now() })
 
@@ -333,6 +342,10 @@ export default class Account {
         await this.localCachingResource.getBookmarksTree()
       }
 
+      if (this.onSyncProcessCreated) {
+        this.onSyncProcessCreated(this.syncProcess)
+      }
+
       Logger.log('Starting sync process')
       await this.syncProcess.sync()
       Logger.log('Ended sync process')
@@ -354,7 +367,19 @@ export default class Account {
         // Remove superfluous items from mappings
         // as we don't remove items immediately for anymore (for Atomic adapters), due to possible interrupts
         Logger.log('Removing superfluous mappings')
-        await mappings.gc(cache)
+        // For atomic adapters the in-memory cache is a complete, post-sync server tree, so we
+        // can also drop mappings whose remote counterpart no longer exists. Non-atomic adapters
+        // return a sparse tree from getBookmarksTree(); using it for GC would erroneously drop
+        // mappings for unloaded items, so we skip the remote-side check there.
+        let serverTree
+        if (this.server.isAtomic()) {
+          try {
+            serverTree = await this.server.getBookmarksTree()
+          } catch (e) {
+            Logger.log('Could not fetch server tree for mapping GC, skipping remote-side cleanup', e)
+          }
+        }
+        await mappings.gc(cache, serverTree)
         // store mappings
         Logger.log('Storing mappings')
         await mappings.persist()
@@ -381,40 +406,34 @@ export default class Account {
 
       // Catch MappingFailureError and gracefully resume with reset cache
       if (matchAllErrors(e, e => e.code === 48)) {
-        Logger.log('Caught MappingFailureError: Gracefully resuming with reset cache')
+        Logger.log('Caught MappingFailureError: Gracefully resuming with reset cache and forceSync:true')
         await this.init()
         await this.storage.setCurrentContinuation(null)
         this.syncProcess = null
         this.localCachingResource = null
         await this.setData({ syncing: false })
         this.syncing = false
-        return this.sync(strategy, forceSync)
+        return this.sync(strategy, true)
       }
 
       console.error('Syncing failed with', message)
       Logger.log('Syncing failed with', message)
-      setContext('accountData', {
-        ...this.getData(),
-        username: 'SENSITIVEVALUEHIDDEN',
-        password: 'SENSITIVEVALUVALUEHIDDEN',
-        passphrase: 'SENSITIVEVALUVALUEHIDDEN'
-      })
-      withScope((scope) => {
-        scope.setTag('adapter', this.getData().type)
-        if (e.list) {
-          captureException(message)
-        } else {
-          captureException(e)
-        }
-      })
 
       if (this.server.onSyncFail) {
-        await this.server.onSyncFail()
+        try {
+          await this.server.onSyncFail()
+        } catch (e) {
+          console.log(e)
+          Logger.log('onSyncFail failed with ', e)
+        }
       }
 
       this.syncing = false
 
-      const isTransient = matchAllErrors(e, e => e instanceof TransientError)
+      const isTransient = matchAllErrors(
+        e,
+        (e) => e.list || !(e instanceof FloccusError) || e instanceof TransientError
+      )
 
       await this.setData({
         error: message,
@@ -471,19 +490,24 @@ export default class Account {
     }
     if (actionsDone) {
       const mappings = this.syncProcess.getMappingsInstance()
-      if (this.server.isAtomic()) {
-        Logger.log('progressCallback: Persisting cache')
-        if (!this.localCachingResource) {
-          return
-        }
-        const cache = (await this.localCachingResource.getCacheTree()).clone(
-          false
-        )
-        this.syncProcess.filterOutUnacceptedBookmarks(cache)
-        await this.storage.setCache(cache)
-        Logger.log('progressCallback: Persisting mappings')
-        await mappings.persist()
-      } else {
+      if (!this.localCachingResource) {
+        return
+      }
+      // Persist the cache incrementally in *both* the atomic and non-atomic cases.
+      // Previously the cache was only persisted here for atomic adapters; for non-atomic
+      // adapters it was written only on successful sync completion (see sync()). During a long
+      // run of interrupted (never-completed) syncs that left the stored cache stale, so the next
+      // fresh sync re-saw already-synced items as new creations and re-created them on the
+      // non-atomic server — accumulating duplicate folders whose mappings then collided
+      // (MappingFailureError -> reset+forceSync -> divergence). Mappings are already persisted at
+      // the interrupt point; the cache must be kept in step with them.
+      Logger.log('progressCallback: Persisting cache')
+      const cache = (await this.localCachingResource.getCacheTree()).clone(
+        false
+      )
+      this.syncProcess.filterOutUnacceptedBookmarks(cache)
+      await this.storage.setCache(cache)
+      if (!this.server.isAtomic()) {
         Logger.log('progressCallback: Serializing continuation')
         const cont = await this.syncProcess.toJSONAsync()
         if (!this.syncing) {
@@ -494,9 +518,9 @@ export default class Account {
         }
         Logger.log('progressCallback: Persisting continuation')
         await this.storage.setCurrentContinuation(cont)
-        Logger.log('progressCallback: Persisting mappings')
-        await mappings.persist()
       }
+      Logger.log('progressCallback: Persisting mappings')
+      await mappings.persist()
     }
   }
 

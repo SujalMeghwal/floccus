@@ -99,7 +99,8 @@ export default class DropboxAdapter extends CachingAdapter {
         headers: {
           Authorization: 'Bearer ' + result.access_token_response.access_token,
           'Content-Type': 'application/json'
-        }
+        },
+        body: 'null' // Dropbox needs this even if undocumented
       })
 
       if (res.status !== 200) {
@@ -187,6 +188,7 @@ export default class DropboxAdapter extends CachingAdapter {
           Authorization: 'Bearer ' + json.access_token,
           'Content-Type': 'application/json',
         },
+        body: 'null', // Dropbox needs this even if undocumented
       })
 
       if (res.status !== 200) {
@@ -317,7 +319,7 @@ export default class DropboxAdapter extends CachingAdapter {
       await this.timeout(2000)
     }
 
-    const file = fileList.matches[0]
+    let file = fileList.matches[0]
 
     const filesToDelete = fileList.matches.slice(1)
     for (const fileToDelete of filesToDelete) {
@@ -327,6 +329,22 @@ export default class DropboxAdapter extends CachingAdapter {
         Logger.log('Failed to delete superfluous file: ' + e.message)
       }
     }
+
+    // The Dropbox search index (search_v2) is only eventually consistent, so a
+    // recently created/updated file can be missing from the results even after
+    // the retries above. If we trust that false negative, the sync process
+    // resets its cache (treating the profile as new) and onSyncComplete then
+    // tries to createFile() with mode 'add', which fails with
+    // "path/conflict/file" because the file actually exists. Fall back to a
+    // strongly consistent metadata lookup by path before giving up.
+    if (!file || !file.metadata?.metadata?.id) {
+      const metadata = await this.getFileMetadataByPath(`/${this.server.bookmark_file}`)
+      if (metadata && metadata.id) {
+        Logger.log('Dropbox search returned no matches, but the bookmarks file exists (found via get_metadata by path)')
+        file = { metadata: { metadata } }
+      }
+    }
+
     if (file && file.metadata.metadata.id) {
       this.fileId = file.metadata.metadata.id
 
@@ -640,6 +658,37 @@ export default class DropboxAdapter extends CachingAdapter {
   }
 
   /**
+   * Looks up file metadata by path (as opposed to by id).
+   *
+   * Unlike listFiles()/search_v2, get_metadata reflects the current state of
+   * the account without index-propagation delay, so it is a reliable way to
+   * check whether the bookmarks file exists.
+   * @param {string} path A Dropbox file path (e.g. "/bookmarks.xbel")
+   * @returns {any} JSON file metadata, or null if the file does not exist
+   */
+  async getFileMetadataByPath(path: string): Promise<any> {
+    const res = await this.request('POST', this.getUrl() + `/files/get_metadata`,
+      {
+        'include_deleted': false,
+        'include_has_explicit_shared_members': false,
+        'include_media_info': false,
+        'path': path,
+      },
+      'application/json'
+    )
+    if (res.status === 409) {
+      // path/not_found: the file does not exist
+      return null
+    }
+    if (res.status >= 400) {
+      Logger.log('Dropbox API error: ' + JSON.stringify(await res.text()))
+      throw new HttpError(res.status, 'POST')
+    }
+
+    return res.json()
+  }
+
+  /**
    * Download a file from Dropbox.
    *
    * Platform notes:
@@ -667,9 +716,9 @@ export default class DropboxAdapter extends CachingAdapter {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${this.accessToken}`,
-          'Dropbox-API-Arg': JSON.stringify({ path }),
+          'Dropbox-API-Arg': httpHeaderSafeJson({ path }),
           'Content-Type': 'application/octet-stream',
-          'Connection': 'close',
+          Connection: 'close',
           'Cache-Control': 'no-cache',
         },
         // Important: forces a new upload task and prevents
@@ -682,7 +731,7 @@ export default class DropboxAdapter extends CachingAdapter {
         throw new HttpError(res.status, 'POST')
       }
 
-      return await res.text()
+      return res.text()
     }
 
     // ========= Android (Capacitor native) =========
@@ -691,10 +740,10 @@ export default class DropboxAdapter extends CachingAdapter {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${this.accessToken}`,
-          'Dropbox-API-Arg': JSON.stringify({ path }),
-          Accept: 'application/octet-stream'
+          'Dropbox-API-Arg': httpHeaderSafeJson({ path }),
+          Accept: 'application/octet-stream',
         },
-        body: new Uint8Array(0) // empty body prevents 400 error
+        body: new Uint8Array(0), // empty body prevents 400 error
       })
 
       if (res.status >= 400) {
@@ -709,7 +758,7 @@ export default class DropboxAdapter extends CachingAdapter {
 
     // ========= Web / Browser =========
     const extraHeaders = {
-      'Dropbox-API-Arg': JSON.stringify({ path }),
+      'Dropbox-API-Arg': httpHeaderSafeJson({ path }),
     }
 
     const res = await this.request('POST', url, null, null, extraHeaders)
@@ -719,7 +768,7 @@ export default class DropboxAdapter extends CachingAdapter {
       throw new HttpError(res.status, 'POST')
     }
 
-    return await res.text()
+    return res.text()
   }
 
   /**
@@ -992,13 +1041,13 @@ export default class DropboxAdapter extends CachingAdapter {
    */
   async createFile(xbel: string, path:string) {
     const extraHeaders = {
-      'Dropbox-API-Arg': JSON.stringify({
-        'autorename': false,
-        'mode': 'add',
-        'mute': false,
-        'path': `/${path}`,
-        'strict_conflict': false
-      })
+      'Dropbox-API-Arg': httpHeaderSafeJson({
+        autorename: false,
+        mode: 'add',
+        mute: false,
+        path: `/${path}`,
+        strict_conflict: false,
+      }),
     }
     const res = await this.request('POST', this.getContentUrl() + `/files/upload`,
       xbel,
@@ -1026,13 +1075,13 @@ export default class DropboxAdapter extends CachingAdapter {
    */
   async uploadFile(id:string, xbel: string) {
     const extraHeaders = {
-      'Dropbox-API-Arg': JSON.stringify({
-        'autorename': false,
-        'mode': 'overwrite',
-        'mute': false,
-        'path': id,
-        'strict_conflict': false
-      })
+      'Dropbox-API-Arg': httpHeaderSafeJson({
+        autorename: false,
+        mode: 'overwrite',
+        mute: false,
+        path: id,
+        strict_conflict: false,
+      }),
     }
     const res = await this.request('POST', this.getContentUrl() + `/files/upload`,
       xbel,
@@ -1050,6 +1099,19 @@ export default class DropboxAdapter extends CachingAdapter {
 
     return res.status === 200
   }
+}
+
+// From https://www.dropbox.com/developers/reference/json-encoding:
+//
+// This function is simple and has OK performance compared to more
+// complicated ones: http://jsperf.com/json-escape-unicode/4
+const charsToEncode = /[\u007f-\uffff]/g
+function httpHeaderSafeJson(v) {
+  return JSON.stringify(v).replace(charsToEncode,
+    function(c) {
+      return '\\u' + ('000' + c.charCodeAt(0).toString(16)).slice(-4)
+    }
+  )
 }
 
 function createXBEL(rootFolder, highestId) {

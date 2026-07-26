@@ -1,6 +1,6 @@
 {
   "Error001": {
-    "message": "E001: Seda kausta pole olemas, kus sa soovid sisu luua"
+    "message": "E001: Seda kausta pole olemas, kuhu sa soovid sisu luua"
   },
   "Error002": {
     "message": "E002: Uuendatavat järjehoidjat pole olemas"
@@ -157,6 +157,15 @@
   },
   "Error054": {
     "message": "E054: Dropboxi malli ei õnnestunud saada"
+  },
+  "Error055": {
+    "message": "E055: Allalaaditud Google Drive’i järjehoidjate faili suurus erineb serveri poolt näidatud suurusest. Tegemist võib olla ajutise võrguühenduse probleemiga. Kui viga püsib, proovi palun hiljem uuesti."
+  },
+  "Error056": {
+    "message": "E056: Üleslaaditud Google Drive’i järjehoidjate faili suurus erineb suurusest, mille server pärast üleslaadimise kontrollimist näitas. floccus proovis üleslaadimist uuesti, kuid ei suutnud tulemust kinnitada. Palun proovi hiljem uuesti."
+  },
+  "Error057": {
+    "message": "E057: Ootamatu kaust serveris: „{0}“. Palun kontrolli serverikaustade seadistusi.."
   },
   "LabelWebdavurl": {
     "message": "WebDAVi võrguaadress"
@@ -795,21 +804,6 @@
   "LabelGitbranch": {
     "message": "Git-haru"
   },
-  "LabelTelemetry": {
-    "message": "Automaatne veateavitus"
-  },
-  "DescriptionTelemetry": {
-    "message": "Floccus saab automaatselt saata veaandmeid mulle, arendajale. See on tohutu abi floccuse vigade kiiremaks avastamiseks ja lahendamiseks ning aitab pikemas perspektiivis parandada teie kogemust floccusega. Isegi kui veateade on sisse lülitatud, ei näe floccuse arendajad kunagi teie järjehoidjaid."
-  },
-  "DescriptionTelemetrysyncmethod": {
-    "message": "Uus: Lisaks veateabele saadab floccus nüüd ka teavet kasutatud sünkroonimismeetodi kohta (kui selline valik on sisse lülitatud). See aitab meil floccust arendada ja tagada, et sünkroonimimeetodid toimivad nii nagu vaja."
-  },
-  "LabelTelemetryenable": {
-    "message": "Saadab automaatselt veaandmed ja teabe selle kohta, millist sünkroonimismeetodit te kasutate, floccuse arendajatele."
-  },
-  "LabelTelemetrydisable": {
-    "message": "Ärge saatke andmeid floccuse arendajatele."
-  },
   "LabelAccountlabel": {
     "message": "Profiili silt"
   },
@@ -868,7 +862,7 @@
     "message": "Karakeep"
   },
   "DescriptionAdapterKarakeep":  {
-    "message": "Sünkroonige oma järjehoidjad avatud lähtekoodiga isehostitava rakendusega Karakeep. See valik ei saa kasutada otsast-otsani krüpteerimist ega toeta järjehoidjate järjekorra säilitamist sünkroonide vahel."
+    "message": "Sünkrooni oma järjehoidjad avatud lähtekoodiga omas serveris hallatava Karakeep-rakendusega. See suudab sünkroonida ainult HTTP-järjehoidjaid. See valik ei võimalda kasutada läbivat krüptimist ega toeta järjehoidjate järjekorra säilitamist sünkroonimise käigus."
   },
   "LabelApiKey":  {
     "message": "API võti"
@@ -909,30 +903,6 @@
   "LabelOpeninnewtab": {
     "message": "Avage see vaade uues vahekaardis"
   },
-  "LabelGivefeedback": {
-    "message": "Andke tagasisidet"
-  },
-  "LabelYourname": {
-    "message": "Teie nimi"
-  },
-  "LabelYouremail": {
-    "message": "Teie e-posti aadress (vabatahtlik)"
-  },
-  "LabelYourmessage": {
-    "message": "Teie tagasiside sõnum"
-  },
-  "LabelSubmitfeedback": {
-    "message": "Tagasiside esitamine"
-  },
-  "DescriptionFeedbacklegal": {
-    "message": "See tagasiside vorm on Sentry poolt pakutav. Vajutades \"Saada\" nõustute sisestatud andmete salvestamisega Sentry serverites. Sentryle ei saadeta ühtegi teie järjehoidja andmestikku."
-  },
-  "DescriptionFeedbackhowto": {
-    "message": "Aitäh, et võtsite aega, et anda tagasisidet floccuse arendajatele! Kui teie tagasiside on seotud mõne probleemiga, lisage kindlasti, milliseid samme te võtsite, mida ootasite ja mis selle asemel juhtus. Kui teie tagasiside on seotud funktsioonitaotlusega, lisage kindlasti kasutusjuhtum või probleem, mida see funktsioon teie jaoks lahendaks. Kui lisate oma e-posti aadressi, võime teile vastata. Täname teid!"
-  },
-  "LabelFeedbacksent": {
-    "message": "Täname teid tagasiside eest!"
-  },
   "LabelFaq":{
     "message": "Vaata KKK-dest"
   },
@@ -962,5 +932,38 @@
   },
   "DescriptionPredefinedwebdavurls": {
     "message": "Vali oma teenus"
+  },
+  "LabelShowpassword": {
+    "message": "Näita salasõna"
+  },
+  "LabelHidepassword": {
+    "message": "Peida salasõna"
+  },
+  "LabelTitle": {
+    "message": "Pealkiri"
+  },
+  "LabelLink": {
+    "message": "Link"
+  },
+  "LabelParentfolder": {
+    "message": "Ülemkaust"
+  },
+  "LabelHome": {
+    "message": "Avaleht"
+  },
+  "LabelSortby": {
+    "message": "Järjestus"
+  },
+  "LabelMoreactions": {
+    "message": "Täiendavad tegevused"
+  },
+  "LabelServerconnectionsuccessful": {
+    "message": "Ühendamine serveriga õnnestus"
+  },
+  "LabelSynconstartup": {
+    "message": "Sünkrooni käivitamisel"
+  },
+  "DescriptionSynconstartup": {
+    "message": "Sisselülitamisel kuulub see profiil käivitamisel sünkroonimisele. Sobib olukorraks, kus sa ei taha oodata korralist sünkroonimist ja tahad, et järjehoidjad oleks kohe uuendatud."
   }
 }

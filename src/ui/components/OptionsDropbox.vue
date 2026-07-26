@@ -13,16 +13,19 @@
     <v-card class="mb-4">
       <v-card-title
         id="server"
-        class="text-h5">
-        <v-icon>mdi-account-box</v-icon>
+        class="text-h5"
+        role="heading"
+        aria-level="2">
+        <v-icon aria-hidden="true">
+          mdi-account-box
+        </v-icon>
         {{ t('LabelOptionsServerDetails') }}
       </v-card-title>
       <v-card-text>
         <div>
           <template v-if="authorized || refreshToken">
             {{ username }}
-            <v-icon
-              color="success">
+            <v-icon color="success">
               mdi-check
             </v-icon>
           </template>
@@ -32,7 +35,11 @@
             {{ t('LabelLogindropbox') }}
           </v-btn>
           <p class="mt-1">
-            {{ authorized || refreshToken? t('DescriptionLoggedindropbox') : t('DescriptionLogindropbox') }}
+            {{
+              authorized || refreshToken
+                ? t('DescriptionLoggedindropbox')
+                : t('DescriptionLogindropbox')
+            }}
           </p>
         </div>
         <v-text-field
@@ -55,8 +62,12 @@
       class="mb-4">
       <v-card-title
         id="folder"
-        class="text-h5">
-        <v-icon>mdi-folder-outline</v-icon>
+        class="text-h5"
+        role="heading"
+        aria-level="2">
+        <v-icon aria-hidden="true">
+          mdi-folder-outline
+        </v-icon>
         {{ t('LabelOptionsFolderMapping') }}
       </v-card-title>
       <v-card-text>
@@ -71,8 +82,12 @@
       class="mb-4">
       <v-card-title
         id="mobile"
-        class="text-h5">
-        <v-icon>mdi-cellphone-settings</v-icon>
+        class="text-h5"
+        role="heading"
+        aria-level="2">
+        <v-icon aria-hidden="true">
+          mdi-cellphone-settings
+        </v-icon>
         {{ t('LabelMobilesettings') }}
       </v-card-title>
       <v-card-text>
@@ -86,21 +101,30 @@
     <v-card class="mb-4">
       <v-card-title
         id="sync"
-        class="text-h5">
-        <v-icon>mdi-sync-circle</v-icon>
+        class="text-h5"
+        role="heading"
+        aria-level="2">
+        <v-icon aria-hidden="true">
+          mdi-sync-circle
+        </v-icon>
         {{ t('LabelOptionsSyncBehavior') }}
       </v-card-title>
       <v-card-text>
         <OptionAutoSync
           :value="enabled"
           @input="$emit('update:enabled', $event)" />
-        <OptionSyncIntervalEnabled
-          :value="syncIntervalEnabled"
-          @input="$emit('update:syncIntervalEnabled', $event)" />
-        <OptionSyncInterval
-          v-if="syncIntervalEnabled"
-          :value="syncInterval"
-          @input="$emit('update:syncInterval', $event)" />
+        <OptionSyncOnStartup
+          :value="syncOnStartupEnabled"
+          @input="$emit('update:syncOnStartupEnabled', $event)" />
+        <template v-if="isBrowser">
+          <OptionSyncIntervalEnabled
+            :value="syncIntervalEnabled"
+            @input="$emit('update:syncIntervalEnabled', $event)" />
+          <OptionSyncInterval
+            v-if="syncIntervalEnabled"
+            :value="syncInterval"
+            @input="$emit('update:syncInterval', $event)" />
+        </template>
         <OptionSyncStrategy
           :value="strategy"
           @input="$emit('update:strategy', $event)" />
@@ -114,8 +138,12 @@
     <v-card class="mb-4">
       <v-card-title
         id="danger"
-        class="text-h5">
-        <v-icon>mdi-alert-circle</v-icon>
+        class="text-h5"
+        role="heading"
+        aria-level="2">
+        <v-icon aria-hidden="true">
+          mdi-alert-circle
+        </v-icon>
         {{ t('LabelOptionsDangerous') }}
       </v-card-title>
       <v-card-text>
@@ -144,11 +172,42 @@ import OptionPassphrase from './OptionPassphrase'
 import OptionExportBookmarks from './OptionExportBookmarks.vue'
 import OptionAutoSync from './OptionAutoSync.vue'
 import OptionSyncIntervalEnabled from './OptionSyncIntervalEnabled.vue'
+import OptionSyncOnStartup from './OptionSyncOnStartup.vue'
 
 export default {
   name: 'OptionsDropbox',
-  components: { OptionSyncIntervalEnabled, OptionAutoSync, OptionExportBookmarks, OptionPassphrase, OptionAllowNetwork, OptionDownloadLogs, OptionFailsafe, OptionSyncFolder, OptionDeleteAccount, OptionSyncStrategy, OptionResetCache, OptionSyncInterval, OptionNestedSync },
-  props: ['username', 'password', 'refreshToken', 'localRoot', 'allowNetwork', 'syncInterval', 'strategy', 'bookmark_file', 'nestedSync', 'failsafe', 'enabled', 'label', 'syncIntervalEnabled'],
+  components: {
+    OptionSyncOnStartup,
+    OptionSyncIntervalEnabled,
+    OptionAutoSync,
+    OptionExportBookmarks,
+    OptionPassphrase,
+    OptionAllowNetwork,
+    OptionDownloadLogs,
+    OptionFailsafe,
+    OptionSyncFolder,
+    OptionDeleteAccount,
+    OptionSyncStrategy,
+    OptionResetCache,
+    OptionSyncInterval,
+    OptionNestedSync,
+  },
+  props: [
+    'username',
+    'password',
+    'refreshToken',
+    'localRoot',
+    'allowNetwork',
+    'syncInterval',
+    'strategy',
+    'bookmark_file',
+    'nestedSync',
+    'failsafe',
+    'enabled',
+    'label',
+    'syncIntervalEnabled',
+    'syncOnStartupEnabled',
+  ],
   data() {
     return {
       panels: [0, 1],
@@ -161,17 +220,17 @@ export default {
       return !path.includes('/')
     },
     async authenticate() {
-      const DropboxAdapter = (await import('../../lib/adapters/Dropbox')).default
+      const DropboxAdapter = (await import('../../lib/adapters/Dropbox'))
+        .default
       const { refresh_token, username } = await DropboxAdapter.authorize()
       if (refresh_token) {
         this.authorized = true
         this.$emit('update:refreshToken', refresh_token)
         this.$emit('update:username', username)
       }
-    }
-  }
+    },
+  },
 }
 </script>
 
-<style scoped>
-</style>
+<style scoped></style>

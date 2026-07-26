@@ -11,6 +11,7 @@ import {
   InconsistentBookmarksExistenceError, InvalidUrlError, LockFileError,
   MissingItemOrderError,
   ParseResponseError, ServersideAdditionFailsafeError, ServersideDeletionFailsafeError, UnexpectedFolderPathError,
+  UnexpectedServerFolder,
   UnknownFolderItemOrderError, UpdateBookmarkError
 } from '../../errors/Error'
 import Logger from '../Logger'
@@ -46,23 +47,41 @@ export default class NativeAccount extends Account {
 
   async init(): Promise<void> {
     console.log('initializing account ' + this.id)
+
     await this.storage.initMappings()
     await this.storage.initCache()
-    const nativeTree = new NativeTree(this.storage)
-    await nativeTree.load()
-    this.localTree = nativeTree
   }
 
   async isInitialized(): Promise<boolean> {
     try {
       return Boolean(
-        NativeAccountStorage.getEntry(
+        await NativeAccountStorage.getEntry(
           `bookmarks[${this.storage.accountId}].mappings`
         )
       )
     } catch (e) {
       console.log('Apparently not initialized, because:', e)
       return false
+    }
+  }
+
+  async sync(...args) {
+    let localResource
+    try {
+      localResource = await this.getResource()
+      if (localResource instanceof NativeTree) {
+        await localResource.saveImmediately()
+      }
+    } catch (e) {
+      Logger.log(
+        'Failed to persist unsaved changes from NativeTree before sync:',
+        e
+      )
+      Logger.log('Continuing anyway.')
+    }
+    await super.sync(...args)
+    if (localResource instanceof NativeTree) {
+      await localResource.saveImmediately()
     }
   }
 
@@ -151,6 +170,11 @@ export default class NativeAccount extends Account {
     if (er instanceof InvalidUrlError) {
       return i18n.getMessage('Error' + String(er.code).padStart(3, '0'), [
         er.url,
+      ])
+    }
+    if (er instanceof UnexpectedServerFolder) {
+      return i18n.getMessage('Error' + String(er.code).padStart(3, '0'), [
+        er.serverFolder,
       ])
     }
     if (er instanceof FloccusError) {

@@ -50,7 +50,8 @@
                 icon
                 class="white--text"
                 v-bind="attrs"
-                :to="{name: routes.DONATE}"
+                :aria-label="t('LabelFunddevelopment')"
+                :to="{ name: routes.DONATE }"
                 target="_blank"
                 v-on="on">
                 <v-icon small>
@@ -101,6 +102,7 @@
                 icon
                 class="white--text"
                 v-bind="attrs"
+                :aria-label="t('LabelOpeninnewtab')"
                 target="_blank"
                 @click="openInNewTab"
                 v-on="on">
@@ -197,16 +199,16 @@ export default {
       return {
         background: 'linear-gradient(135deg, #f0f4ff 0%, #e8f0fe 60%, #dbeafe 100%)'
       }
-    }
+    },
   },
   async created() {
     if (window.KAGI) {
-      browser.storage.local.set({'isOrion': true})
+      browser.storage.local.set({ isOrion: true })
     }
 
     await Promise.all([
       this.$store.dispatch(actions.LOAD_LOCKED),
-      this.$store.dispatch(actions.LOAD_ACCOUNTS)
+      this.$store.dispatch(actions.LOAD_ACCOUNTS),
     ])
     const controller = await Controller.getSingleton()
     const unregister = controller.onStatusChange(() =>
@@ -216,6 +218,7 @@ export default {
     window.addEventListener('beforeunload', unregister)
     window.addEventListener('unload', unregister)
     window.addEventListener('close', unregister)
+
     const {telemetryEnabled} = await browser.storage.local.get({'telemetryEnabled': false})
     this.telemetryEnabled = telemetryEnabled
   },
@@ -229,9 +232,9 @@ export default {
       }
     },
     openInNewTab() {
-      browser.tabs.create({url: window.location.href})
-    }
-  }
+      browser.tabs.create({ url: window.location.href })
+    },
+  },
 }
 </script>
 

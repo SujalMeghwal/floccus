@@ -13,8 +13,11 @@
     <v-card class="mb-4">
       <v-card-title
         id="server"
-        class="options-section-title text-h5 font-weight-bold">
+        class="options-section-title text-h5 font-weight-bold"
+        role="heading"
+        aria-level="2">
         <v-icon
+          aria-hidden="true"
           color="primary"
           class="mr-2">mdi-account-box</v-icon>
         {{ t('LabelOptionsServerDetails') }}
@@ -34,10 +37,22 @@
           label="Password / Token"
           hint="Enter your password, personal access token (PAT), or OAuth token"
           :persistent-hint="true"
-          :append-icon="showPassword ? 'mdi-eye' : 'mdi-eye-off'"
           :type="showPassword ? 'text' : 'password'"
-          @click:append="showPassword = !showPassword"
-          @input="$emit('update:password', $event)" />
+          @input="$emit('update:password', $event)">
+          <template #append>
+            <v-icon
+              role="button"
+              tabindex="0"
+              :aria-label="
+                showPassword ? t('LabelHidepassword') : t('LabelShowpassword')
+              "
+              @click="showPassword = !showPassword"
+              @keydown.enter="showPassword = !showPassword"
+              @keydown.space.prevent="showPassword = !showPassword">
+              {{ showPassword ? 'mdi-eye' : 'mdi-eye-off' }}
+            </v-icon>
+          </template>
+        </v-text-field>
         <v-text-field
           append-icon="mdi-file-document"
           :value="bookmark_file"
@@ -62,8 +77,11 @@
       class="mb-4">
       <v-card-title
         id="folder"
-        class="options-section-title text-h5 font-weight-bold">
+        class="options-section-title text-h5 font-weight-bold"
+        role="heading"
+        aria-level="2">
         <v-icon
+          aria-hidden="true"
           color="primary"
           class="mr-2">mdi-folder-outline</v-icon>
         {{ t('LabelOptionsFolderMapping') }}
@@ -80,8 +98,11 @@
       class="mb-4">
       <v-card-title
         id="mobile"
-        class="options-section-title text-h5 font-weight-bold">
+        class="options-section-title text-h5 font-weight-bold"
+        role="heading"
+        aria-level="2">
         <v-icon
+          aria-hidden="true"
           color="primary"
           class="mr-2">mdi-cellphone-settings</v-icon>
         {{ t('LabelMobilesettings') }}
@@ -97,8 +118,11 @@
     <v-card class="mb-4">
       <v-card-title
         id="sync"
-        class="options-section-title text-h5 font-weight-bold">
+        class="options-section-title text-h5 font-weight-bold"
+        role="heading"
+        aria-level="2">
         <v-icon
+          aria-hidden="true"
           color="primary"
           class="mr-2">mdi-sync-circle</v-icon>
         {{ t('LabelOptionsSyncBehavior') }}
@@ -107,13 +131,18 @@
         <OptionAutoSync
           :value="enabled"
           @input="$emit('update:enabled', $event)" />
-        <OptionSyncIntervalEnabled
-          :value="syncIntervalEnabled"
-          @input="$emit('update:syncIntervalEnabled', $event)" />
-        <OptionSyncInterval
-          v-if="syncIntervalEnabled"
-          :value="syncInterval"
-          @input="$emit('update:syncInterval', $event)" />
+        <OptionSyncOnStartup
+          :value="syncOnStartupEnabled"
+          @input="$emit('update:syncOnStartupEnabled', $event)" />
+        <template v-if="isBrowser">
+          <OptionSyncIntervalEnabled
+            :value="syncIntervalEnabled"
+            @input="$emit('update:syncIntervalEnabled', $event)" />
+          <OptionSyncInterval
+            v-if="syncIntervalEnabled"
+            :value="syncInterval"
+            @input="$emit('update:syncInterval', $event)" />
+        </template>
         <OptionSyncStrategy
           :value="strategy"
           @input="$emit('update:strategy', $event)" />
@@ -127,8 +156,11 @@
     <v-card class="mb-4">
       <v-card-title
         id="danger"
-        class="options-section-title text-h5 font-weight-bold">
+        class="options-section-title text-h5 font-weight-bold"
+        role="heading"
+        aria-level="2">
         <v-icon
+          aria-hidden="true"
           color="error"
           class="mr-2">mdi-alert-circle</v-icon>
         {{ t('LabelOptionsDangerous') }}
@@ -169,11 +201,49 @@ import OptionFileType from './OptionFileType'
 import OptionExportBookmarks from './OptionExportBookmarks.vue'
 import OptionAutoSync from './OptionAutoSync.vue'
 import OptionSyncIntervalEnabled from './OptionSyncIntervalEnabled.vue'
+import OptionSyncOnStartup from './OptionSyncOnStartup.vue'
 
 export default {
   name: 'OptionsGit',
-  components: { OptionSyncIntervalEnabled, OptionAutoSync, OptionExportBookmarks, OptionAllowNetwork, OptionDownloadLogs, OptionAllowRedirects, OptionClientCert, OptionFailsafe, OptionSyncFolder, OptionDeleteAccount, OptionSyncStrategy, OptionResetCache, OptionSyncInterval, OptionNestedSync, OptionFileType },
-  props: ['url', 'username', 'password', 'branch', 'includeCredentials', 'serverRoot', 'localRoot', 'allowNetwork', 'syncInterval', 'strategy', 'bookmark_file', 'nestedSync', 'failsafe', 'allowRedirects', 'bookmark_file_type', 'enabled', 'label', 'syncIntervalEnabled'],
+  components: {
+    OptionSyncOnStartup,
+    OptionSyncIntervalEnabled,
+    OptionAutoSync,
+    OptionExportBookmarks,
+    OptionAllowNetwork,
+    OptionDownloadLogs,
+    OptionAllowRedirects,
+    OptionClientCert,
+    OptionFailsafe,
+    OptionSyncFolder,
+    OptionDeleteAccount,
+    OptionSyncStrategy,
+    OptionResetCache,
+    OptionSyncInterval,
+    OptionNestedSync,
+    OptionFileType,
+  },
+  props: [
+    'url',
+    'username',
+    'password',
+    'branch',
+    'includeCredentials',
+    'serverRoot',
+    'localRoot',
+    'allowNetwork',
+    'syncInterval',
+    'strategy',
+    'bookmark_file',
+    'nestedSync',
+    'failsafe',
+    'allowRedirects',
+    'bookmark_file_type',
+    'enabled',
+    'label',
+    'syncIntervalEnabled',
+    'syncOnStartupEnabled',
+  ],
   data() {
     return {
       panels: [0, 1],
@@ -193,7 +263,7 @@ export default {
     validateBookmarksFile(path) {
       return path[0] !== '/' && path[path.length - 1] !== '/'
     },
-  }
+  },
 }
 </script>
 

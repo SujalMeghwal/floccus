@@ -9,16 +9,15 @@ Vue.use(Router)
 export const routes = {
   HOME: 'HOME',
   TREE: 'TREE',
+  TEST: 'TEST',
   ACCOUNT_OPTIONS: 'ACCOUNT_OPTIONS',
   NEW_ACCOUNT: 'NEW_ACCOUNT',
   ADD_BOOKMARK: 'ADD_BOOKMARK',
   FUNDING: 'FUNDING',
   UPDATE: 'UPDATE',
   IMPORTEXPORT: 'IMPORTEXPORT',
-  FEEDBACK: 'FEEDBACK',
   DONATE: 'DONATE',
   ABOUT: 'ABOUT',
-  TELEMETRY: 'TELEMETRY',
 }
 
 export const router = new Router({
@@ -28,6 +27,11 @@ export const router = new Router({
       path: '/',
       name: routes.HOME,
       component: Home,
+    },
+    {
+      path: '/test',
+      name: routes.TEST,
+      component: () => import(/* webpackPrefetch: true */ './views/native/TestRunner.vue')
     },
     {
       path: '/tree/:accountId',
@@ -58,16 +62,6 @@ export const router = new Router({
       path: '/importexport',
       name: routes.IMPORTEXPORT,
       component: () => import(/* webpackPrefetch: true */ './views/native/ImportExport')
-    },
-    {
-      path: '/feedback',
-      name: routes.FEEDBACK,
-      component: () => import(/* webpackPrefetch: true */ './views/native/Feedback'),
-    },
-    {
-      path: '/telemetry',
-      name: routes.TELEMETRY,
-      component: () => import(/* webpackPrefetch: true */ './views/native/Telemetry'),
     },
     {
       path: '/about',

@@ -8,7 +8,7 @@ import {
   CancelledSyncError, HttpError, MissingPermissionsError,
   NetworkError, ParseResponseError,
   RedirectError,
-  RequestTimeoutError
+  RequestTimeoutError, UnexpectedServerFolder
 } from '../../errors/Error'
 import { CapacitorHttp as Http } from '@capacitor/core'
 
@@ -153,9 +153,12 @@ export default class LinkwardenAdapter implements Adapter, IResource<typeof Item
       await this.sendRequest('DELETE', `/api/v1/links/${bookmark.id}`, undefined, undefined, false, bookmark)
     } catch (e) {
       if (e instanceof HttpError) {
-        if (e.status === 404) {
+        if (e.status === 404 || e.status === 401 || e.status === 403) {
           return
         }
+      }
+      if (e instanceof AuthenticationError) {
+        return
       }
       throw e
     }
@@ -204,6 +207,8 @@ export default class LinkwardenAdapter implements Adapter, IResource<typeof Item
       } catch (e) {
         if (e instanceof HttpError && e.status === 401) {
           success = true
+        } else if (e instanceof AuthenticationError) {
+          return
         } else if (count > 3) {
           throw e
         }
@@ -214,36 +219,75 @@ export default class LinkwardenAdapter implements Adapter, IResource<typeof Item
 
   async getBookmarksTree(loadAll?: boolean): Promise<Folder<typeof ItemLocation.SERVER>> {
     const links = []
-    let data
-    do {
-      ({ data } = await this.sendRequest('GET', `/api/v1/search?searchQueryString=&cursor=${data?.nextCursor || ''}`))
+    let nextCursor = null
+    while (true) {
+      const params = new URLSearchParams({ searchQueryString: '' })
+      if (nextCursor) {
+        params.set('cursor', nextCursor)
+      }
+      const { data } = await this.sendRequest('GET', `/api/v1/search?${params.toString()}`)
       links.push(...data.links)
-    } while (data.links.length !== 0 && data.nextCursor !== null)
+
+      nextCursor = data.nextCursor
+        ? data.nextCursor
+        : null
+
+      if (!nextCursor) {
+        break
+      }
+    }
 
     const { response: collections } = await this.sendRequest('GET', `/api/v1/collections`)
 
-    let rootCollection = collections.find(collection => collection.name === this.server.serverFolder && collection.parentId === null)
+    let rootCollection = collections.find(collection => collection.name === this.server.serverFolder && collection.parentId == null)
+
     if (!rootCollection) {
-      ({response: rootCollection} = await this.sendRequest(
-        'POST', '/api/v1/collections',
-        'application/json',
-        {
-          name: this.server.serverFolder,
-        }))
+      const segments = this.server.serverFolder.split('/').filter(seg => seg.length > 0)
+
+      if (segments.length === 0) {
+        throw new UnexpectedServerFolder(this.server.serverFolder)
+      }
+      let currentParentId = null
+      let current = null
+
+      for (const segment of segments) {
+        const expectedParent = currentParentId == null ? null : String(currentParentId)
+        current = collections.find(collection => {
+          const actualParent = collection.parentId == null ? null : String(collection.parentId)
+          return collection.name === segment && actualParent === expectedParent
+        })
+        if (!current) {
+          const body: { name: string; parentId?: string | number } = { name: segment }
+          if (currentParentId != null) {
+            body.parentId = currentParentId
+          }
+          ({ response: current } = await this.sendRequest(
+            'POST', '/api/v1/collections',
+            'application/json',
+            body
+          ))
+          collections.push(current)
+        }
+        currentParentId = current.id
+      }
+      if (current) {
+        rootCollection = current
+      }
     }
 
     const buildTree = (collection, isRoot = false) => {
+      const collectionId = String(collection.id)
       return new Folder({
         id: collection.id,
         title: collection.name,
-        parentId: collection.parentId,
+        parentId: collection.parentId ?? null,
         location: ItemLocation.SERVER,
         isRoot,
         children: collections
-          .filter(col => col.parentId === collection.id)
+          .filter(col => String(col.parentId) === collectionId)
           .map(buildTree).concat(
             links
-              .filter(link => link.collectionId === collection.id)
+              .filter(link => String(link.collectionId) === collectionId)
               .map(link => new Bookmark({
                 id: link.id,
                 title: link.name,

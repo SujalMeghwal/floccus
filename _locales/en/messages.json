@@ -158,6 +158,15 @@
   "Error054": {
     "message": "E054: Could not get template for Dropbox"
   },
+  "Error055": {
+    "message": "E055: The downloaded Google Drive bookmarks file size differs from the size reported by the server. This might be a temporary network issue. If this error persists please try again later."
+  },
+  "Error056": {
+    "message": "E056: The uploaded Google Drive bookmarks file size differs from the size reported by the server after upload verification. floccus retried the upload but could not confirm the result. Please try again later."
+  },
+  "Error057": {
+    "message": "E057: Unexpected server folder: `{0}`. Please check your server folder configuration."
+  },
   "LabelWebdavurl": {
     "message": "WebDAV URL"
   },
@@ -795,21 +804,6 @@
   "LabelGitbranch": {
     "message": "Git branch"
   },
-  "LabelTelemetry": {
-    "message": "Automated Error Reporting"
-  },
-  "DescriptionTelemetry": {
-    "message": "Floccus can automatically send error data to me, the developer. This is a tremendous help for discovering and resolving bugs in floccus more quickly and will help improve your experience with floccus in the long run. Even when error reporting is enabled, the floccus developers will never be able to see your bookmarks."
-  },
-  "DescriptionTelemetrysyncmethod": {
-    "message": "New: In addition to the error information, floccus now also sends information about which sync method you are using, if this option is enabled. This helps us to improve floccus and to make sure that the sync methods are working as expected."
-  },
-  "LabelTelemetryenable": {
-    "message": "Automatically send error data and information about which sync method you are using to floccus developers"
-  },
-  "LabelTelemetrydisable": {
-    "message": "Do not send any data to floccus developers"
-  },
   "LabelAccountlabel": {
     "message": "Profile label"
   },
@@ -868,7 +862,7 @@
     "message": "Karakeep"
   },
   "DescriptionAdapterKarakeep":  {
-    "message": "Sync your bookmarks with the open-source self-hosted Karakeep app. This option cannot make use of end-to-end encryption and does not support keeping the order of bookmarks across syncs."
+    "message": "Sync your bookmarks with the open-source self-hosted Karakeep app. It can only sync http bookmarks. This option cannot make use of end-to-end encryption and does not support keeping the order of bookmarks across syncs."
   },
   "LabelApiKey":  {
     "message": "API key"
@@ -909,30 +903,6 @@
   "LabelOpeninnewtab": {
     "message": "Open this view in a new tab"
   },
-  "LabelGivefeedback": {
-    "message": "Give feedback"
-  },
-  "LabelYourname": {
-    "message": "Your name"
-  },
-  "LabelYouremail": {
-    "message": "Your email (optional)"
-  },
-  "LabelYourmessage": {
-    "message": "Your feedback message"
-  },
-  "LabelSubmitfeedback": {
-    "message": "Submit feedback"
-  },
-  "DescriptionFeedbacklegal": {
-    "message": "This feedback form is powered by Sentry. By pressing submit you agree to store the entered data on Sentry's servers. None of your bookmark data will be sent to Sentry."
-  },
-  "DescriptionFeedbackhowto": {
-    "message": "Thank you for taking the time to give feedback to the developers of floccus! If your feedback is related to a problem, make sure to include the steps you took, what you expected and what happened instead. If your feedback is about a feature request, make sure to include the use case or problem that this feature would solve for you. If you include your email, we may get back to you. Thank you!"
-  },
-  "LabelFeedbacksent": {
-    "message": "Thank you for your feedback!"
-  },
   "LabelFaq":{
     "message": "Check the FAQ"
   },
@@ -962,5 +932,38 @@
   },
   "DescriptionPredefinedwebdavurls": {
     "message": "Select your service"
+  },
+  "LabelShowpassword": {
+    "message": "Show password"
+  },
+  "LabelHidepassword": {
+    "message": "Hide password"
+  },
+  "LabelTitle": {
+    "message": "Title"
+  },
+  "LabelLink": {
+    "message": "Link"
+  },
+  "LabelParentfolder": {
+    "message": "Parent folder"
+  },
+  "LabelHome": {
+    "message": "Home"
+  },
+  "LabelSortby": {
+    "message": "Sort by"
+  },
+  "LabelMoreactions": {
+    "message": "More actions"
+  },
+  "LabelServerconnectionsuccessful": {
+    "message": "Server connection successful"
+  },
+  "LabelSynconstartup": {
+    "message": "Sync on startup"
+  },
+  "DescriptionSynconstartup": {
+    "message": "If enabled, this profile will be synced on startup. This is useful if you want to sync your bookmarks on startup, but don't want to wait for the next scheduled sync."
   }
 }

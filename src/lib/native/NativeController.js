@@ -4,7 +4,6 @@ import Cryptography from '../Crypto'
 import NativeAccountStorage from './NativeAccountStorage'
 import Account from '../Account'
 import { STATUS_ALLGOOD, STATUS_DISABLED, STATUS_ERROR, STATUS_SYNCING } from '../interfaces/Controller'
-import { initSharp } from '../sentry'
 import { LocalNotifications } from '@capacitor/local-notifications'
 import { i18n } from './I18n'
 
@@ -261,7 +260,7 @@ export default class NativeController {
     }, STATUS_ALLGOOD)
 
     if (overallStatus === STATUS_ALLGOOD) {
-      if (accounts.every(account => !account.getData().enabled && !account.getData().syncIntervalEnabled)) {
+      if (accounts.every(account => !account.getData().enabled && !account.getData().syncIntervalEnabled && !account.getData().syncOnStartupEnabled)) {
         overallStatus = STATUS_DISABLED
       }
     }
@@ -280,10 +279,6 @@ export default class NativeController {
   }
 
   async onLoad() {
-    if (await NativeAccountStorage.getEntry('telemetryEnabled', false)) {
-      initSharp()
-    }
-
     if ((await LocalNotifications.checkPermissions()).display !== 'denied') {
       LocalNotifications.requestPermissions()
     }
@@ -296,6 +291,9 @@ export default class NativeController {
             syncing: false,
             scheduled: false,
           })
+        }
+        if (acc.getData().syncOnStartupEnabled) {
+          this.scheduleSync(acc.id)
         }
       })
     )

@@ -8,7 +8,8 @@
       <v-icon
         v-if="item.type === 'folder'"
         color="blue darken-1"
-        large>
+        large
+        aria-hidden="true">
         mdi-folder
       </v-icon>
       <FaviconImage
@@ -33,20 +34,26 @@
     <v-list-item-action>
       <v-menu
         bottom
+        offset-y
         left>
         <template #activator="{ on, attrs }">
           <v-btn
             icon
+            :aria-label="t('LabelMoreactions')"
             v-bind="attrs"
             v-on="on">
-            <v-icon>mdi-dots-vertical</v-icon>
+            <v-icon aria-hidden="true">
+              mdi-dots-vertical
+            </v-icon>
           </v-btn>
         </template>
 
         <v-list>
           <v-list-item @click="$emit('edit')">
             <v-list-item-avatar>
-              <v-icon>mdi-pencil</v-icon>
+              <v-icon aria-hidden="true">
+                mdi-pencil
+              </v-icon>
             </v-list-item-avatar>
             <v-list-item-title>
               {{ t('LabelEdititem') }}
@@ -56,7 +63,9 @@
             v-if="item.type === 'bookmark'"
             @click="$emit('share')">
             <v-list-item-avatar>
-              <v-icon>mdi-share</v-icon>
+              <v-icon aria-hidden="true">
+                mdi-share
+              </v-icon>
             </v-list-item-avatar>
             <v-list-item-title>
               {{ t('LabelShareitem') }}
@@ -64,7 +73,9 @@
           </v-list-item>
           <v-list-item @click="$emit('delete')">
             <v-list-item-avatar>
-              <v-icon>mdi-delete</v-icon>
+              <v-icon aria-hidden="true">
+                mdi-delete
+              </v-icon>
             </v-list-item-avatar>
             <v-list-item-title>
               {{ t('LabelDeleteitem') }}
