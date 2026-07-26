@@ -1,0 +1,17 @@
+
+.options[data-v-dd29043c] {
+    max-width: 600px;
+    margin: 0 auto;
+}
+@media screen and (min-width: 600px) {
+.v-card--flat[data-v-dd29043c] {
+    width: 48%
+}
+}
+a[data-v-dd29043c]:link {
+  color: inherit;
+  text-decoration: none;
+}
+
+
+/*# sourceMappingURL=897.css.map*/

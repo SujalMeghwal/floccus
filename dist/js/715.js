@@ -1,0 +1,2 @@
+"use strict";(globalThis.webpackChunkfloccus=globalThis.webpackChunkfloccus||[]).push([[715],{24715(e,c,n){n.d(c,{SendIntentWeb:()=>t});var s=n(16546);class t extends s.WebPlugin{constructor(){super()}async checkSendIntentReceived(){return{title:""}}finish(){}}}}]);
+//# sourceMappingURL=715.js.map
